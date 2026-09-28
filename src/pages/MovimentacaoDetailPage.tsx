@@ -391,6 +391,7 @@ export default function MovimentacaoDetailPage() {
                   },
                   { label: 'Planta', value: planta?.nome ?? '—' },
                   { label: 'Solicitante', value: mov.solicitanteNome },
+                  { label: 'Aprovador superior', value: mov.aprovadorGestorNome ?? 'A definir no envio' },
                   { label: 'Data de abertura', value: formatDate(mov.dataAbertura) },
                   { label: 'Vigência', value: formatDate(mov.vigencia) },
                 ]}

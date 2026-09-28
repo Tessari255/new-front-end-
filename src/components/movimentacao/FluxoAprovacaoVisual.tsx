@@ -9,7 +9,7 @@ export function FluxoAprovacaoVisual({ movimentacao }: { movimentacao: Movimenta
     <ol className="flex flex-col gap-4">
       {ETAPAS_ORDEM.map((etapa) => {
         // Etapa gestor pode ter duas decisões (aprovação dupla origem+destino em transferências).
-        const decisoes = movimentacao.decisoes.filter((d) => d.etapa === etapa)
+        const decisoes = movimentacao.decisoes.filter((d) => d.etapa === etapa && d.rodadaAprovacao === movimentacao.rodadaAprovacao)
         const ativo = movimentacao.etapaAtual === etapa && movimentacao.status === 'em_andamento'
         const negativa = decisoes.find((d) => d.decisao !== 'aprovado')
         const concluidaComSucesso = decisoes.length > 0 && !negativa && !ativo
@@ -45,7 +45,7 @@ export function FluxoAprovacaoVisual({ movimentacao }: { movimentacao: Movimenta
                   </div>
                 ))
               ) : (
-                <p className="text-xs text-[var(--color-ink-subtle)]">{ativo ? 'Pendente de decisão' : 'Não iniciada'}</p>
+                <p className="text-xs text-[var(--color-ink-subtle)]">{ativo && etapa === 'gestor' ? `Pendente de ${movimentacao.aprovadorGestorNome ?? 'superior cadastrado'}` : ativo ? 'Pendente de decisão' : 'Não iniciada'}</p>
               )}
               {aguardandoSegundaAprovacao && (
                 <p className="mt-1 text-[11px] text-[var(--color-warning)]">Aguardando aprovação do outro gestor (origem/destino).</p>

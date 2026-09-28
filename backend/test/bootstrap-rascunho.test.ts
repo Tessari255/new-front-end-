@@ -29,7 +29,7 @@ describe('bootstrap e rascunhos', () => {
       assert.ok(chave in b, `faltou ${chave}`)
     }
     assert.equal(b.plantas.length, 3)
-    assert.equal(b.colaboradores.length, 44)
+    assert.equal(b.colaboradores.length, 45)
     assert.equal(b.movimentacoes.length, 23)
     assert.equal(b.currentUser.perfil, 'rh_central')
     assert.equal(typeof b.movimentacoes[0].id, 'string')

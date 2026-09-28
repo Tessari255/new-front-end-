@@ -76,6 +76,9 @@ export const USUARIOS = {
   yasmin: 'demo.gestor.col-joi-10', // gestora direta de Bianca (Joinville)
   brunoGru: 'demo.gestor.col-gru-02',
   thiagoJoi: 'demo.gestor.col-joi-07', // gestor em Joinville, mas não gestor direto de Bianca
+  gerenteJoi: 'demo.gestor.col-joi-01',
+  diretor: 'demo.gestor.col-cor-01',
+  cio: 'demo.gestor.col-cor-09',
   rhLocalJoi: 'demo.rh-local.joi',
   rhLocalGru: 'demo.rh-local.gru',
   rhCentral: 'demo.rh-central',

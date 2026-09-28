@@ -19,21 +19,23 @@ export function etapaDoPerfil(perfil: PerfilDemo): EtapaMovimentacao | null {
 
 /**
  * Espelha, para a interface, a regra aplicada pelo servidor: quem pode decidir a etapa atual.
- * (Gestor: só o gestor direto; RH Local: sua planta; RH Central: plantas autorizadas; Auditoria: ninguém.)
+ * (Gestor: superior designado ou gestor de destino; RH Local: sua planta; RH Central: plantas autorizadas.)
  * A decisão de fato é sempre validada no backend.
  */
-export function usuarioPodeDecidir(usuario: Usuario | null, mov: Movimentacao, colaboradores: Colaborador[]): boolean {
+export function usuarioPodeDecidir(usuario: Usuario | null, mov: Movimentacao, _colaboradores: Colaborador[]): boolean {
   if (!usuario || mov.status !== 'em_andamento') return false
   const etapa = etapaDoPerfil(usuario.perfil)
   if (!etapa || etapa !== mov.etapaAtual) return false
   if (usuario.perfil === 'gestor') {
     if (usuario.colaboradorId === null) return false
-    const gestorAtualId = colaboradores.find((c) => c.id === mov.colaboradorId)?.gestorId ?? null
-    if (gestorAtualId === usuario.colaboradorId) return true
+    const gestorAtualId = mov.aprovadorGestorId
+    if (gestorAtualId === usuario.colaboradorId) {
+      return !mov.decisoes.some((d) => d.etapa === 'gestor' && d.rodadaAprovacao === mov.rodadaAprovacao && d.decisao === 'aprovado' && d.aprovadorNome === usuario.nome)
+    }
     const gestorPropostoId = gestorPropostoDaAlteracao(mov.alteracao)
     if (mov.etapaAtual === 'gestor' && requerAprovacaoGestorDestino(mov.tipo, gestorAtualId, gestorPropostoId) && gestorPropostoId === usuario.colaboradorId) {
       // Já registrou a própria decisão? A API é a autoridade; aqui é só para não reoferecer a ação.
-      return !mov.decisoes.some((d) => d.etapa === 'gestor' && d.decisao === 'aprovado' && d.aprovadorNome === usuario.nome)
+      return !mov.decisoes.some((d) => d.etapa === 'gestor' && d.rodadaAprovacao === mov.rodadaAprovacao && d.decisao === 'aprovado' && d.aprovadorNome === usuario.nome)
     }
     return false
   }
@@ -114,7 +116,9 @@ export function pendenciasComAcao(movimentacoes: Movimentacao[], colaboradores: 
   return pendentes
     .map((mov) => {
       const colaborador = colaboradores.find((c) => c.id === mov.colaboradorId)
-      const responsavel = colaborador ? nomeAprovador(mov.etapaAtual, colaborador, colaboradores) : 'A definir'
+      const responsavel = mov.etapaAtual === 'gestor'
+        ? mov.aprovadorGestorNome ?? 'A definir'
+        : colaborador ? nomeAprovador(mov.etapaAtual, colaborador, colaboradores) : 'A definir'
       const ultimaData = mov.decisoes[mov.decisoes.length - 1]?.data ?? `${mov.dataAbertura}T08:00:00`
       const prazo = addDays(ultimaData, 5)
       return { movimentacao: mov, responsavel, prazo, atrasada: new Date(prazo) < agora }

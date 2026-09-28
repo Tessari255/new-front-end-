@@ -122,11 +122,12 @@ const decisao = obj(
     etapa: str,
     aprovadorPerfil: str,
     aprovadorNome: str,
+    rodadaAprovacao: int,
     decisao: str,
     comentario: str,
     data: str,
   },
-  ['etapa', 'aprovadorPerfil', 'aprovadorNome', 'decisao', 'data'],
+  ['etapa', 'aprovadorPerfil', 'aprovadorNome', 'decisao', 'data', 'rodadaAprovacao'],
 )
 export const movimentacao = obj(
   {
@@ -148,12 +149,16 @@ export const movimentacao = obj(
     decisoes: arr(decisao),
     chamadoId: str,
     chamadoPaiId: strNull,
+    aprovadorGestorId: strNull,
+    aprovadorGestorNome: strNull,
+    rodadaAprovacao: int,
     rhLiberadaFolhaEm: str,
     arquivosGerados: obj({ apdataGeradoEm: str, employeeCentralGeradoEm: str }, []),
   },
   [
     'id', 'protocolo', 'colaboradorId', 'tipo', 'plantaId', 'solicitanteNome', 'dataAbertura', 'vigencia', 'etapaAtual',
-    'status', 'alteracao', 'justificativa', 'potencial', 'documentosIds', 'checagens', 'decisoes', 'chamadoId', 'arquivosGerados',
+    'status', 'alteracao', 'justificativa', 'potencial', 'documentosIds', 'checagens', 'decisoes', 'chamadoId',
+    'aprovadorGestorId', 'aprovadorGestorNome', 'rodadaAprovacao', 'arquivosGerados',
   ],
 )
 export const documento = obj(

@@ -172,7 +172,7 @@ planta e colaborador no banco — o cliente e o token nunca escolhem um perfil.
 
 | Perfil | Usuários seed | Escopo de leitura | Pode decidir |
 | --- | --- | --- | --- |
-| Gestor | 5 gestores (ex.: Yasmin Rodrigues Freitas, Joinville) | planta do próprio colaborador | etapa `gestor`, apenas de seus liderados diretos (e, em transferência de localidade com gestor de destino informado, também como gestor de destino) |
+| Gestor | gestores vinculados aos colaboradores da demonstração | sua planta e solicitações atribuídas a ele | etapa `gestor`, quando é o superior cadastrado do solicitante (ou do colaborador, se o RH solicitou); pode também aprovar como gestor de destino em transferência de localidade |
 | RH Local | 1 por planta | sua planta | etapa `rh_local` da sua planta |
 | RH Central | Sede Corporativa | todas as plantas | etapa `rh_central`; libera movimentação aprovada para a Folha |
 | Auditoria | 1 | todas | nunca (somente leitura) |
@@ -215,8 +215,10 @@ sem stack ou SQL. O `X-Correlation-Id` é propagado nos logs estruturados do Fas
   colaborador; cargo permitido na planta; salário positivo e diferente do atual; enquadramento muda
   folha ou horário; centro de custo compatível com a planta (atual ou proposta, conforme o tipo);
   evidência obrigatória para salário, promoção, enquadramento e mérito. **Faixa salarial é só aviso.**
-- **Aprovação:** Gestor → RH Local → RH Central; quem cria o workflow para seu próprio liderado não
-  aprova a própria solicitação (a etapa inicial já sai em RH Local). Devolução (comentário ≥ 5) volta
+- **Aprovação:** Superior hierárquico → RH Local → RH Central. Quando um gestor solicita, aprova o
+  superior cadastrado do gestor; quando o RH solicita, aprova o superior cadastrado do colaborador.
+  Gerente de planta reporta ao diretor e diretor ao CIO na demonstração. Sem superior ativo, de nível
+  mais alto e com acesso de gestor, o envio é bloqueado. Devolução (comentário ≥ 5) volta
   para o gestor; reprovação encerra. A aprovação final marca `aprovada/concluida` e **não altera o
   cadastro canônico**. Transferência de localidade com gestor de destino informado exige aprovação de
   **ambos** (origem e destino) antes de avançar — mecanismo genérico e configurável
@@ -274,8 +276,9 @@ volume atual).
 
 ## Suposições adotadas (lacunas registradas)
 
-- Sem matriz de alçadas, o escopo é por **planta**: Gestor aprova só liderados diretos; RH Central atua
-  em todas as plantas quando o usuário não tem planta definida (a estrutura já aceita restringir).
+- O primeiro aprovador é o superior cadastrado de quem solicitou, ou do colaborador quando o RH solicitou;
+  a solicitação atribuída aparece para ele mesmo entre plantas. RH Central atua em todas as plantas
+  quando o usuário não tem planta definida (a estrutura já aceita restringir).
 - Gestor/RH podem abrir movimentações para colaboradores da sua planta (regra de demonstração).
 - Transferência de centro de custo só dentro da planta atual (como no frontend); transferência de
   localidade cruza plantas; proposta igual ao valor atual é tratada como "não informada".
@@ -314,7 +317,8 @@ parcelamento) e rollout técnico para as seis plantas.
 2. **Colaboradores → Bianca Ferreira Aguiar** (Joinville, Qualidade) → **Solicitar movimentação**.
 3. **Mudança de gestor** — compare Yasmin Rodrigues Freitas (atual) com Mariana Oliveira Castro
    (proposta), justifique e envie (com o usuário **Yasmin**, gestora direta).
-4. **Aprovações** — Yasmin aprova; troque o usuário no topo para **RH Local — Planta Joinville** e depois
+4. **Aprovações** — troque o usuário no topo para o superior de Yasmin e aprove; depois use
+   **RH Local — Planta Joinville** e
    **RH Central — Sede Corporativa** e aprove até concluir. Recarregue o navegador: nada se perde.
 5. **Linha do tempo** — abertura, validação, três aprovações e conclusão, gravadas no PostgreSQL.
 6. **Saída** — como RH Central, gere a carga Apdata e o arquivo Employee Central (demonstrativos).

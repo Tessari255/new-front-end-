@@ -147,7 +147,6 @@ export default function NovaMovimentacaoPage() {
   const folhas = useAppStore((s) => s.folhas)
   const movimentacoes = useAppStore((s) => s.movimentacoes)
   const documentos = useAppStore((s) => s.documentos)
-  const currentUser = useAppStore((s) => s.currentUser)
   const fechamentoFolha = useAppStore((s) => s.fechamentoFolha)
 
   const rascunhoId = searchParams.get('rascunhoId')
@@ -899,13 +898,9 @@ export default function NovaMovimentacaoPage() {
 
                 <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
                   <p className="text-[13px] font-medium text-[var(--color-ink)]">Fluxo de aprovação</p>
-                  {currentUser?.colaboradorId && currentUser.colaboradorId === colaborador.gestorId ? (
-                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
-                      RH Local → RH Central. Como você é o gestor direto do colaborador, a etapa Gestor é pulada (regra: quem cria o workflow não aprova a própria solicitação).
-                    </p>
-                  ) : (
-                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Gestor → RH Local → RH Central. Cada etapa avança após aprovação individual.</p>
-                  )}
+                  <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                    Superior cadastrado → RH Local → RH Central. Se o gestor solicitou, decide o superior dele; se o RH solicitou, decide o superior do colaborador.
+                  </p>
                 </div>
               </div>
             )}

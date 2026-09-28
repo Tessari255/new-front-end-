@@ -166,7 +166,7 @@ export function exigirPerfil(u: UsuarioAutenticado, ...perfis: PerfilDemo[]) {
 
 /**
  * Quem pode decidir a etapa atual:
- * - Gestor: apenas a etapa `gestor`, quando é o gestor direto do colaborador OU (em tipos que
+ * - Gestor: apenas a etapa `gestor`, quando é o superior designado OU (em tipos que
  *   exigem aprovação dupla, como transferência de localidade) o gestor de destino informado;
  * - RH Local: apenas `rh_local`, na sua planta;
  * - RH Central: apenas `rh_central`, nas plantas autorizadas;
@@ -184,7 +184,7 @@ export function podeDecidirEtapa(
     // Gestor de destino decide independentemente do escopo de planta (a movimentação carrega a
     // planta de origem); o gestor de origem segue exigindo acesso à planta normalmente.
     if (mov.colaboradorGestorDestinoId && mov.colaboradorGestorDestinoId === u.colaboradorId) return true
-    return mov.colaboradorGestorId === u.colaboradorId && temAcessoAPlanta(u, mov.plantaId)
+    return mov.colaboradorGestorId === u.colaboradorId
   }
   return temAcessoAPlanta(u, mov.plantaId)
 }

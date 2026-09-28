@@ -78,6 +78,13 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
         }),
       )
     }
+    // Completa apenas os novos vínculos da hierarquia demonstrativa, inclusive em seeds anteriores.
+    for (const c of d.colaboradores) {
+      if (c.gestorKey && (c.cargoKey === 'cargo-ger-planta' || c.key === 'col-cor-01')) await q.query(
+        `update colaboradores set gestor_id = $2 where id = $1 and gestor_id is null`,
+        [colabId.get(c.key), colabId.get(c.gestorKey)],
+      )
+    }
     for (const u of d.usuarios) {
       await garantir(q, 'usuarios', 'subject', {
         subject: u.subject, nome: u.nome, email: u.email, perfil: u.perfil,
@@ -136,14 +143,16 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
     if (await vazia(q, 'movimentacoes')) {
       for (const m of d.movimentacoes) {
         const abertura = m.eventos[0]!.data
+        const gestorKey = d.colaboradores.find((c) => c.key === m.colaboradorKey)?.gestorKey
         const { rows } = await q.query(
           `insert into movimentacoes (colaborador_id, planta_id, solicitante_nome, tipo, data_abertura, vigencia, etapa_atual, status,
-                                      alteracao, justificativa, checagens, potencial, apdata_gerado_em, employee_central_gerado_em, created_at, updated_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15) returning id`,
+                                      alteracao, justificativa, checagens, potencial, apdata_gerado_em, employee_central_gerado_em, created_at, updated_at,
+                                      aprovador_gestor_id)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16) returning id`,
           [
             colabId.get(m.colaboradorKey), plantaId.get(m.plantaKey), m.solicitanteNome, m.tipo, m.dataAbertura, m.vigencia, m.etapaAtual,
             m.status, JSON.stringify(traduzir(m.alteracao)), m.justificativa, JSON.stringify(m.checagens), m.potencial ?? null,
-            m.apdataGeradoEm ?? null, m.employeeCentralGeradoEm ?? null, abertura,
+            m.apdataGeradoEm ?? null, m.employeeCentralGeradoEm ?? null, abertura, gestorKey ? colabId.get(gestorKey) : null,
           ],
         )
         const movId = rows[0].id as string

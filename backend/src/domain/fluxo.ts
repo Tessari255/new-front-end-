@@ -4,8 +4,8 @@ export const ETAPAS_ORDEM: Exclude<EtapaMovimentacao, 'concluida'>[] = ['gestor'
 
 /**
  * Planilha (aba OBSERVAÇÕES): "Necessidade de aprovação do gestor para aprovar workflow qdo
- * transfere funcionário." Tipos aqui exigem, na etapa `gestor`, decisão tanto do gestor de origem
- * quanto do gestor de destino (quando um gestor de destino é informado). Mecanismo genérico e
+ * transfere funcionário." Tipos aqui exigem, na etapa `gestor`, decisão tanto do superior do
+ * solicitante quanto do gestor de destino (quando um gestor de destino é informado). Mecanismo genérico e
  * configurável: a ordem exata dessa aprovação dupla, se deveria valer também para mudança de
  * gestor/transferência de CC e o que fazer quando o gestor de destino não é definido não estão
  * especificados na planilha — decisão de negócio pendente. Hoje aplica-se só a este tipo.
@@ -26,17 +26,6 @@ export function proximaEtapa(etapa: EtapaMovimentacao): EtapaMovimentacao {
   const idx = (ETAPAS_ORDEM as string[]).indexOf(etapa)
   if (idx === -1 || idx === ETAPAS_ORDEM.length - 1) return 'concluida'
   return ETAPAS_ORDEM[idx + 1]!
-}
-
-/**
- * Planilha (aba OBSERVAÇÕES): "Gestor que cria o workflow não precisa aprovar." Quando quem envia
- * para aprovação é o próprio gestor atual do colaborador, a etapa `gestor` seria uma auto-aprovação
- * redundante — pula direto para `rh_local`. Nos demais casos (RH abrindo em nome de alguém, etc.),
- * a etapa `gestor` segue exigida normalmente.
- */
-export function etapaInicial(colaboradorGestorId: string | null, solicitanteColaboradorId: string | null): Exclude<EtapaMovimentacao, 'concluida'> {
-  if (solicitanteColaboradorId !== null && solicitanteColaboradorId === colaboradorGestorId) return 'rh_local'
-  return 'gestor'
 }
 
 export function nomeAprovador(etapa: EtapaMovimentacao, gestorNome: string | null, plantaNome: string): string {

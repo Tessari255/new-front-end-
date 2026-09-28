@@ -150,13 +150,13 @@ const COLUNAS_COLABORADOR = `co.id, co.matricula, co.nome, co.email, co.telefone
   cp.salario_base, cp.ipe,
   case when cp.salario_base > 0 then round((co.salario / cp.salario_base) * 100, 2) end as faixa_atual_percentual`
 
-export async function listarColaboradores(q: Queryable, escopo: Escopo) {
+export async function listarColaboradores(q: Queryable, escopo: Escopo, idsExtras: string[] = []) {
   const { rows } = await q.query<ColaboradorRow>(
     `select ${COLUNAS_COLABORADOR}
        from colaboradores co
        left join cargo_plantas cp on cp.cargo_id = co.cargo_id and cp.planta_id = co.planta_id
-      where ($1::bigint[] is null or co.planta_id = any($1::bigint[])) order by co.nome, co.id`,
-    [escopo],
+      where ($1::bigint[] is null or co.planta_id = any($1::bigint[]) or co.id = any($2::bigint[])) order by co.nome, co.id`,
+    [escopo, idsExtras],
   )
   return rows.map(mapColaborador)
 }
@@ -191,6 +191,9 @@ interface MovimentacaoRow {
   checagens: ChecagemRegra[]
   chamado_pai_id: string | null
   chamado_id: string
+  aprovador_gestor_id: string | null
+  aprovador_gestor_nome: string | null
+  rodada_aprovacao: number
   rh_liberada_folha_em: Date | null
   apdata_gerado_em: Date | null
   employee_central_gerado_em: Date | null
@@ -203,24 +206,29 @@ interface DecisaoRow {
   comentario: string | null
   aprovador_perfil: PerfilDemo
   aprovador_nome: string
+  rodada_aprovacao: number
   data: Date
 }
 
-export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: string[] | null = null) {
+export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: string[] | null = null, aprovadorColaboradorId: string | null = null) {
   const movs = await q.query<MovimentacaoRow>(
     `select id, protocolo, colaborador_id, planta_id, solicitante_nome, tipo, data_abertura, vigencia, etapa_atual,
             status, alteracao, justificativa, potencial, checagens, chamado_pai_id, coalesce(chamado_pai_id, id) as chamado_id,
-            rh_liberada_folha_em, apdata_gerado_em, employee_central_gerado_em
+             rh_liberada_folha_em, apdata_gerado_em, employee_central_gerado_em,
+             aprovador_gestor_id, rodada_aprovacao,
+             (select nome from colaboradores where id = aprovador_gestor_id) as aprovador_gestor_nome
        from movimentacoes
-      where ($1::bigint[] is null or planta_id = any($1::bigint[]))
-        and ($2::bigint[] is null or id = any($2::bigint[]))
-      order by data_abertura desc, id desc`,
-    [escopo, ids],
+       where ($1::bigint[] is null or planta_id = any($1::bigint[]) or
+              ($3::bigint is not null and status = 'em_andamento' and etapa_atual = 'gestor' and
+               (aprovador_gestor_id = $3 or (tipo = 'transferencia_localidade' and alteracao->>'gestorPropostoId' = $3::text))))
+         and ($2::bigint[] is null or id = any($2::bigint[]))
+       order by data_abertura desc, id desc`,
+    [escopo, ids, aprovadorColaboradorId],
   )
   if (movs.rows.length === 0) return []
   const movIds = movs.rows.map((m) => m.id)
   const decisoes = await q.query<DecisaoRow>(
-    `select movimentacao_id, etapa, decisao, comentario, aprovador_perfil, aprovador_nome, data
+    `select movimentacao_id, etapa, decisao, comentario, aprovador_perfil, aprovador_nome, data, rodada_aprovacao
        from movimentacao_decisoes where movimentacao_id = any($1::bigint[]) order by data, id`,
     [movIds],
   )
@@ -259,11 +267,15 @@ export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: str
     checagens: m.checagens,
     chamadoId: m.chamado_id,
     chamadoPaiId: m.chamado_pai_id,
+    aprovadorGestorId: m.aprovador_gestor_id,
+    aprovadorGestorNome: m.aprovador_gestor_nome,
+    rodadaAprovacao: m.rodada_aprovacao,
     rhLiberadaFolhaEm: iso(m.rh_liberada_folha_em),
     decisoes: (decisoesPorMov.get(m.id) ?? []).map((d) => ({
       etapa: d.etapa,
       aprovadorPerfil: d.aprovador_perfil,
       aprovadorNome: d.aprovador_nome,
+      rodadaAprovacao: d.rodada_aprovacao,
       decisao: d.decisao,
       comentario: d.comentario ?? undefined,
       data: d.data.toISOString(),

@@ -7,7 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/Badge'
 import { Avatar } from '@/components/ui/Avatar'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { filtrarPorPlanta, movimentacoesAcionaveisPeloUsuario } from '@/lib/selectors'
+import { movimentacoesAcionaveisPeloUsuario, usuarioPodeDecidir } from '@/lib/selectors'
 import { rotuloEtapaMovimentacao, rotuloTipoMovimentacao } from '@/lib/rotulos'
 import { PERFIS_DEMO } from '@/data/perfis'
 import { formatDate } from '@/lib/format'
@@ -21,7 +21,8 @@ export default function AprovacoesPage() {
   const perfilAtivo = useAppStore((s) => s.perfilAtivo)
   const currentUser = useAppStore((s) => s.currentUser)
 
-  const movimentacoes = filtrarPorPlanta(movimentacoesTodas, plantaSelecionadaId)
+  const movimentacoes = movimentacoesTodas.filter((m) =>
+    plantaSelecionadaId === 'todas' || m.plantaId === plantaSelecionadaId || usuarioPodeDecidir(currentUser, m, colaboradores))
   const perfilInfo = PERFIS_DEMO.find((p) => p.id === perfilAtivo)!
 
   const pendentes =

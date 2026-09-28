@@ -14,7 +14,7 @@ describe('aprovação dupla (gestor de destino em transferência de localidade)'
     chamar(ctx, subject, 'POST', `/movimentacoes/${id}/decisoes`, { decisao, comentario })
 
   /** Bianca (Joinville, gestora Yasmin) transferida para Guarulhos, com o gestor de demo.gestor.col-gru-02 (USUARIOS.brunoGru) como destino. */
-  async function criarTransferenciaLocalidade(comGestorDestino: boolean) {
+  async function criarTransferenciaLocalidade(comGestorDestino: boolean, criador: string = USUARIOS.rhLocalJoi) {
     const bianca = await colaboradorPorNome(ctx, 'Bianca Ferreira Aguiar')
     const { rows: gestorDestino } = await ctx.pool.query(
       `select c.id, c.nome from usuarios u join colaboradores c on c.id = u.colaborador_id where u.subject = 'demo.gestor.col-gru-02'`,
@@ -26,8 +26,7 @@ describe('aprovação dupla (gestor de destino em transferência de localidade)'
     )
     const ccGru = rows[0].id as string
     const plantaGru = rows[0].planta_id as string
-    // Criado pelo RH Local (não pelo gestor) para preservar a etapa gestor normalmente.
-    const criada = await chamar(ctx, USUARIOS.rhLocalJoi, 'POST', '/movimentacoes', {
+    const criada = await chamar(ctx, criador, 'POST', '/movimentacoes', {
       colaboradorId: bianca,
       tipo: 'transferencia_localidade',
       vigencia: '2026-11-01',
@@ -41,7 +40,7 @@ describe('aprovação dupla (gestor de destino em transferência de localidade)'
     })
     if (criada.statusCode !== 201) throw new Error(`criação falhou: ${criada.body}`)
     const id = json(criada).movimentacao.id as string
-    const enviada = await chamar(ctx, USUARIOS.rhLocalJoi, 'POST', `/movimentacoes/${id}/enviar`)
+    const enviada = await chamar(ctx, criador, 'POST', `/movimentacoes/${id}/enviar`)
     if (enviada.statusCode !== 200) throw new Error(`envio falhou: ${enviada.body}`)
     return { id, protocolo: json(enviada).movimentacao.protocolo as string, nomeGestorDestino: nomeBruno }
   }
@@ -73,6 +72,29 @@ describe('aprovação dupla (gestor de destino em transferência de localidade)'
     const decisoesGestor = json(r2).movimentacao.decisoes.filter((d: { etapa: string }) => d.etapa === 'gestor')
     assert.equal(decisoesGestor.length, 2)
     assert.deepEqual(decisoesGestor.map((d: { aprovadorNome: string }) => d.aprovadorNome).sort(), [nomeGestorDestino, 'Yasmin Rodrigues Freitas'].sort())
+  })
+
+  it('quando o gestor de origem cria, o superior dele e o gestor de destino aprovam; o destino vê a pendência', async () => {
+    const { id } = await criarTransferenciaLocalidade(true, USUARIOS.yasmin)
+    const pendenciasDestino = json(await chamar(ctx, USUARIOS.brunoGru, 'GET', '/bootstrap')).movimentacoes
+    assert.ok(pendenciasDestino.some((m: { id: string }) => m.id === id))
+    assert.equal((await decidir(USUARIOS.yasmin, id, 'aprovado')).statusCode, 403)
+    const primeira = await decidir(USUARIOS.brunoGru, id, 'aprovado')
+    assert.equal(json(primeira).movimentacao.etapaAtual, 'gestor')
+    const segunda = await decidir(USUARIOS.gerenteJoi, id, 'aprovado')
+    assert.equal(json(segunda).movimentacao.etapaAtual, 'rh_local')
+  })
+
+  it('após devolução e reenvio, aprovações da rodada anterior não contam', async () => {
+    const { id } = await criarTransferenciaLocalidade(true)
+    await decidir(USUARIOS.yasmin, id, 'aprovado')
+    await decidir(USUARIOS.brunoGru, id, 'devolvido', 'Ajustar a justificativa antes da transferência.')
+    const reenvio = await chamar(ctx, USUARIOS.rhLocalJoi, 'POST', `/movimentacoes/${id}/enviar`)
+    assert.equal(reenvio.statusCode, 200, reenvio.body)
+    const primeira = await decidir(USUARIOS.brunoGru, id, 'aprovado')
+    assert.equal(json(primeira).movimentacao.etapaAtual, 'gestor')
+    const segunda = await decidir(USUARIOS.yasmin, id, 'aprovado')
+    assert.equal(json(segunda).movimentacao.etapaAtual, 'rh_local')
   })
 
   it('o mesmo gestor não pode aprovar duas vezes na etapa (409)', async () => {

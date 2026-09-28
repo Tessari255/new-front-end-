@@ -141,6 +141,7 @@ const cargos: SCargo[] = [
   cg('cargo-analista-ti-pl', 'Analista de TI Pleno', 'Técnico', 'area-ti', 5200, 6300, soGru),
   cg('cargo-coord-ti', 'Coordenador de TI', 'Coordenação', 'area-ti', 8800, 10500, soGru),
   cg('cargo-diretor-industrial', 'Diretor Industrial', 'Diretoria', 'area-producao', 24000, 32000, soGru),
+  cg('cargo-cio', 'CIO', 'CIO', 'area-ti', 35000, 45000, soGru),
 ]
 
 const centrosCusto: SCentroCusto[] = plantas.flatMap((p) => [
@@ -230,6 +231,7 @@ const TEMPLATE_CORPORATIVO: SlotDef[] = [
   s('cargo-analista-ti-pl', 'area-ti', 'horario-adm', 'folha-mensalista', false, 4, 0.45),
   s('cargo-controller', 'area-financeiro', 'horario-adm', 'folha-mensalista', true, 0, 0.5),
   s('cargo-analista-fin-pl', 'area-financeiro', 'horario-adm', 'folha-mensalista', false, 6, 0.4),
+  s('cargo-cio', 'area-ti', 'horario-adm', 'folha-mensalista', true, null, 0.7),
 ]
 
 function ccPorArea(plantaKey: string, areaKey: string): string {
@@ -305,6 +307,12 @@ function gerarColaboradores(): SColaborador[] {
     out.push(novo(slot, 'planta-gru', key, 'COR', gestorKey, 7000, 2000))
     chavesCor.push(key)
   })
+
+  // A hierarquia de demonstração inclui o diretor dos gerentes de planta e o CIO do diretor.
+  for (const c of out) {
+    if (c.cargoKey === 'cargo-ger-planta') c.gestorKey = 'col-cor-01'
+    if (c.key === 'col-cor-01') c.gestorKey = 'col-cor-09'
+  }
 
   // Caso central da demonstração (README): colaboradora de Qualidade em Joinville.
   const bianca = out.find((c) => c.key === 'col-joi-11')!
@@ -619,21 +627,20 @@ function gerarFontes(colaboradores: SColaborador[], divergencias: SDivergencia[]
 
 function gerarDivergencias(colaboradores: SColaborador[]): SDivergencia[] {
   const diretor = colaboradores.find((c) => c.cargoKey === 'cargo-diretor-industrial')?.nome ?? 'Diretor Industrial'
+  const cio = colaboradores.find((c) => c.cargoKey === 'cargo-cio')?.nome ?? 'CIO'
   const responsavel = 'col-cor-04'
   return [
     { colaboradorKey: 'col-gru-01', campo: 'gestor', valorApdata: 'Diretoria Industrial (legado)', valorEmployeeCentral: `Diretor Industrial — ${diretor}`, status: 'resolvida', responsavelKey: responsavel, detectadaEm: brt('2026-09-10T07:40:00'), resolvidaEm: brt('2026-09-12T16:20:00'), justificativaResolucao: 'Apdata atualizado manualmente após confirmação do RH Central; vínculo de gestor corrigido para refletir o organograma vigente.' },
     { colaboradorKey: CASO_CENTRAL_DIVERGENCIA, campo: 'cargo', valorApdata: 'Analista de Qualidade Sênior', valorEmployeeCentral: 'Coordenador de Qualidade', status: 'aberta', responsavelKey: null, detectadaEm: brt('2026-09-18T07:45:00') },
     { colaboradorKey: 'col-joi-07', campo: 'area', valorApdata: 'Produção', valorEmployeeCentral: 'Manutenção', status: 'aberta', responsavelKey: null, detectadaEm: brt('2026-09-18T07:45:00') },
     { colaboradorKey: 'col-bet-04', campo: 'centro_custo', valorApdata: 'BET-1010 · CC Produção', valorEmployeeCentral: 'BET-1020 · CC Manutenção', status: 'resolvida', responsavelKey: responsavel, detectadaEm: brt('2026-09-05T07:40:00'), resolvidaEm: brt('2026-09-08T11:10:00'), justificativaResolucao: 'Confirmado com a liderança de planta: colaborador atua em Manutenção desde julho. Employee Central estava correto; Apdata corrigido.' },
-    { colaboradorKey: 'col-cor-01', campo: 'gestor', valorApdata: 'Conselho Corporativo (legado)', valorEmployeeCentral: 'Sem gestor — Diretoria', status: 'em_tratamento', responsavelKey: responsavel, detectadaEm: brt('2026-09-16T07:40:00') },
+    { colaboradorKey: 'col-cor-01', campo: 'gestor', valorApdata: 'Conselho Corporativo (legado)', valorEmployeeCentral: `CIO — ${cio}`, status: 'em_tratamento', responsavelKey: responsavel, detectadaEm: brt('2026-09-16T07:40:00') },
   ]
 }
 
 function gerarUsuarios(colaboradores: SColaborador[]): SUsuario[] {
-  const gestores: SUsuario[] = ['col-joi-10', 'col-gru-02', 'col-joi-07', 'col-bet-07', 'col-cor-03'].map((key) => {
-    const c = colaboradores.find((x) => x.key === key)!
-    return { subject: `demo.gestor.${key}`, nome: c.nome, email: c.email, perfil: 'gestor', plantaKey: c.plantaKey, colaboradorKey: key }
-  })
+  const gestores: SUsuario[] = colaboradores.filter((c) => c.isGestor).map((c) =>
+    ({ subject: `demo.gestor.${c.key}`, nome: c.nome, email: c.email, perfil: 'gestor', plantaKey: c.plantaKey, colaboradorKey: c.key }))
   const rhLocal: SUsuario[] = plantas.map((p) => ({
     subject: `demo.rh-local.${p.codigo.toLowerCase()}`,
     nome: `RH Local — ${p.nome}`,

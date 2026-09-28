@@ -40,7 +40,7 @@ describe('conciliação Apdata × Employee Central', () => {
       const res = await chamar(ctx, USUARIOS.rhCentral, 'POST', '/conciliacoes')
       assert.equal(res.statusCode, 201, res.body)
       const corpo = json(res)
-      assert.equal(corpo.conferencia.registrosComparados, 44 * 4)
+      assert.equal(corpo.conferencia.registrosComparados, 45 * 4)
       assert.equal(corpo.divergencias.length, 5)
       assert.equal(corpo.logs[0].categoria, 'conciliacao')
     }
@@ -48,7 +48,7 @@ describe('conciliação Apdata × Employee Central', () => {
     assert.deepEqual(await duplicadas(), [])
     const { rows } = await ctx.pool.query(`select origem, status, registros_comparados, finalizada_em is not null as fim from conciliacoes order by id`)
     assert.equal(rows.length, 3) // 1 do seed + 2 execuções
-    assert.deepEqual(rows.slice(1).map((r) => [r.origem, r.status, r.registros_comparados, r.fim]), [['manual', 'concluida', 176, true], ['manual', 'concluida', 176, true]])
+    assert.deepEqual(rows.slice(1).map((r) => [r.origem, r.status, r.registros_comparados, r.fim]), [['manual', 'concluida', 180, true], ['manual', 'concluida', 180, true]])
   })
 
   it('RH Local concilia somente as plantas autorizadas', async () => {
@@ -145,7 +145,7 @@ describe('conciliação Apdata × Employee Central', () => {
     assert.equal(await contar(), 6)
 
     const cli = await executarConciliacao(ctx.pool, { origem: 'agendada' })
-    assert.equal(cli.registrosComparados, 176)
+    assert.equal(cli.registrosComparados, 180)
     assert.equal(cli.divergenciasCriadas, 0)
     const { rows } = await ctx.pool.query(`select origem, status from conciliacoes where id = $1`, [cli.conciliacaoId])
     assert.deepEqual(rows[0], { origem: 'agendada', status: 'concluida' })

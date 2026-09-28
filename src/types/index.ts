@@ -34,7 +34,7 @@ export interface ConfiguracaoCargoPorPlanta {
 export interface Cargo {
   id: string
   nome: string
-  nivel: 'Operacional' | 'Técnico' | 'Coordenação' | 'Gerência' | 'Diretoria'
+  nivel: 'Operacional' | 'Técnico' | 'Coordenação' | 'Gerência' | 'Diretoria' | 'CIO'
   areaId: string
   salarioMin: number
   salarioMax: number
@@ -223,6 +223,7 @@ export interface DecisaoEtapa {
   etapa: EtapaMovimentacao
   aprovadorPerfil: PerfilDemo
   aprovadorNome: string
+  rodadaAprovacao: number
   decisao: 'aprovado' | 'devolvido' | 'reprovado'
   comentario?: string
   data: string // ISO datetime
@@ -269,6 +270,9 @@ export interface Movimentacao {
   chamadoId: string
   /** Preenchido quando esta linha é uma alteração adicional de um chamado já existente. */
   chamadoPaiId?: string | null
+  aprovadorGestorId: string | null
+  aprovadorGestorNome: string | null
+  rodadaAprovacao: number
   /** Liberação do RH para entrada na Folha — gate distinto da aprovação de fluxo (rh_central). */
   rhLiberadaFolhaEm?: string
   arquivosGerados: {

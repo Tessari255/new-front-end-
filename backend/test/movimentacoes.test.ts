@@ -61,9 +61,8 @@ describe('regras de envio', () => {
     assert.equal(envio.statusCode, 200, envio.body)
     const mov = json(envio).movimentacao
     assert.equal(mov.status, 'em_andamento')
-    // Yasmin é a gestora direta de Bianca: pela regra "gestor não aprova a própria solicitação",
-    // o envio pula direto para RH Local.
-    assert.equal(mov.etapaAtual, 'rh_local')
+    // A solicitação de Yasmin segue ao superior dela, sem autoaprovação.
+    assert.equal(mov.etapaAtual, 'gestor')
     assert.ok(json(envio).historico.some((e: { tipo: string }) => e.tipo === 'validacao'))
   })
 
@@ -164,18 +163,60 @@ describe('fluxo de aprovação', () => {
     assert.equal((await decidir(USUARIOS.rhCentral, mov.id, 'aprovado')).statusCode, 409)
   })
 
-  it('gestor que cria o workflow para o próprio liderado não aprova a própria solicitação: pula direto para RH Local', async () => {
+  it('gestor que cria o workflow envia ao próprio superior, sem autoaprovação', async () => {
     const mov = await criarMudancaGestorEnviada(ctx) // criado e enviado por Yasmin, gestora direta de Bianca
     assert.equal(mov.status, 'em_andamento')
-    assert.equal(mov.etapaAtual, 'rh_local')
-    // Yasmin não tem mais nada a decidir aqui: a etapa pendente é rh_local, não gestor.
+    assert.equal(mov.etapaAtual, 'gestor')
     assert.equal((await decidir(USUARIOS.yasmin, mov.id, 'aprovado')).statusCode, 403)
-
-    const r1 = await decidir(USUARIOS.rhLocalJoi, mov.id, 'aprovado')
+    const r1 = await decidir(USUARIOS.gerenteJoi, mov.id, 'aprovado')
     assert.equal(r1.statusCode, 200, r1.body)
-    assert.equal(json(r1).movimentacao.etapaAtual, 'rh_central')
-    // Nenhuma decisão foi registrada na etapa gestor (foi pulada, não "auto aprovada").
-    assert.equal(json(r1).movimentacao.decisoes.some((d: { etapa: string }) => d.etapa === 'gestor'), false)
+    assert.equal(json(r1).movimentacao.etapaAtual, 'rh_local')
+    assert.equal(json(r1).movimentacao.decisoes.at(-1).aprovadorNome, json(await chamar(ctx, USUARIOS.gerenteJoi, 'GET', '/bootstrap')).currentUser.nome)
+  })
+
+  it('alteração salarial de gerente vai ao diretor; a de diretor vai ao CIO', async () => {
+    for (const [solicitante, aprovador] of [
+      [USUARIOS.gerenteJoi, USUARIOS.diretor],
+      [USUARIOS.diretor, USUARIOS.cio],
+    ] as const) {
+      const { rows } = await ctx.pool.query(
+        `select c.id, c.salario from usuarios u join colaboradores c on c.id = u.colaborador_id where u.subject = $1`,
+        [solicitante],
+      )
+      const criada = await chamar(ctx, solicitante, 'POST', '/movimentacoes', {
+        colaboradorId: rows[0].id, tipo: 'alteracao_salarial', vigencia: '2026-11-01',
+        justificativa: 'Revisão salarial aprovada para avaliação pelo superior hierárquico.',
+        alteracao: { salarioProposto: Number(rows[0].salario) + 100 },
+      })
+      assert.equal(criada.statusCode, 201, criada.body)
+      const id = json(criada).movimentacao.id
+      assert.equal((await anexar(ctx, solicitante, id, { nome: 'parecer.pdf', mime: 'application/pdf', conteudo: PDF_VALIDO })).statusCode, 201)
+      const enviada = await chamar(ctx, solicitante, 'POST', `/movimentacoes/${id}/enviar`)
+      assert.equal(enviada.statusCode, 200, enviada.body)
+      assert.equal(json(enviada).movimentacao.etapaAtual, 'gestor')
+      assert.equal(json(enviada).movimentacao.aprovadorGestorId, (await colaboradorPorNome(ctx, json(await chamar(ctx, aprovador, 'GET', '/bootstrap')).currentUser.nome)))
+      assert.equal((await decidir(solicitante, id, 'aprovado')).statusCode, 403)
+      const aprovada = await decidir(aprovador, id, 'aprovado')
+      assert.equal(aprovada.statusCode, 200, aprovada.body)
+      assert.equal(json(aprovada).movimentacao.etapaAtual, 'rh_local')
+    }
+  })
+
+  it('não envia solicitação quando não existe superior habilitado', async () => {
+    const { rows } = await ctx.pool.query(
+      `select c.id, c.salario from usuarios u join colaboradores c on c.id = u.colaborador_id where u.subject = $1`,
+      [USUARIOS.cio],
+    )
+    const criada = await chamar(ctx, USUARIOS.cio, 'POST', '/movimentacoes', {
+      colaboradorId: rows[0].id, tipo: 'alteracao_salarial', vigencia: '2026-11-01',
+      justificativa: 'Revisão salarial para avaliação hierárquica.',
+      alteracao: { salarioProposto: Number(rows[0].salario) + 100 },
+    })
+    const id = json(criada).movimentacao.id
+    await anexar(ctx, USUARIOS.cio, id, { nome: 'parecer.pdf', mime: 'application/pdf', conteudo: PDF_VALIDO })
+    const envio = await chamar(ctx, USUARIOS.cio, 'POST', `/movimentacoes/${id}/enviar`)
+    assert.equal(envio.statusCode, 422)
+    assert.equal(json(envio).error.code, 'SUPERIOR_NAO_CADASTRADO')
   })
 
   it('perfil ou escopo errado recebe 403 (ou 404 fora da planta); auditoria é somente leitura', async () => {
