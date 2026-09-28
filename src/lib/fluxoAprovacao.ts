@@ -1,7 +1,18 @@
-import type { Colaborador, EtapaMovimentacao, PerfilDemo } from '@/types'
+import type { Colaborador, DetalheAlteracao, EtapaMovimentacao, PerfilDemo, TipoMovimentacao } from '@/types'
 import { getPlanta } from '@/data/catalog'
 
 export const ETAPAS_ORDEM: EtapaMovimentacao[] = ['gestor', 'rh_local', 'rh_central']
+
+/** Espelha backend/src/domain/fluxo.ts::EXIGE_APROVACAO_GESTOR_DESTINO. */
+export const EXIGE_APROVACAO_GESTOR_DESTINO: TipoMovimentacao[] = ['transferencia_localidade']
+
+export function requerAprovacaoGestorDestino(tipo: TipoMovimentacao, gestorAtualId: string | null, gestorPropostoId: string | null): boolean {
+  return EXIGE_APROVACAO_GESTOR_DESTINO.includes(tipo) && !!gestorPropostoId && gestorPropostoId !== gestorAtualId
+}
+
+export function gestorPropostoDaAlteracao(alteracao: DetalheAlteracao): string | null {
+  return alteracao.tipo === 'transferencia_localidade' ? alteracao.gestorPropostoId : null
+}
 
 export const PERFIL_DA_ETAPA: Record<Exclude<EtapaMovimentacao, 'concluida'>, PerfilDemo> = {
   gestor: 'gestor',

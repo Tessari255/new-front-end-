@@ -1,6 +1,6 @@
 import type { Colaborador, Divergencia, EtapaMovimentacao, Movimentacao, PerfilDemo, StatusMovimentacao, Usuario } from '@/types'
 import { getPerfilDemo } from '@/data/perfis'
-import { nomeAprovador } from './fluxoAprovacao'
+import { gestorPropostoDaAlteracao, nomeAprovador, requerAprovacaoGestorDestino } from './fluxoAprovacao'
 import { addDays, estaNoMesAtual } from './dates'
 
 export function filtrarPorPlanta<T extends { plantaId: string }>(lista: T[], plantaId: string | 'todas'): T[] {
@@ -27,7 +27,15 @@ export function usuarioPodeDecidir(usuario: Usuario | null, mov: Movimentacao, c
   const etapa = etapaDoPerfil(usuario.perfil)
   if (!etapa || etapa !== mov.etapaAtual) return false
   if (usuario.perfil === 'gestor') {
-    return usuario.colaboradorId !== null && colaboradores.find((c) => c.id === mov.colaboradorId)?.gestorId === usuario.colaboradorId
+    if (usuario.colaboradorId === null) return false
+    const gestorAtualId = colaboradores.find((c) => c.id === mov.colaboradorId)?.gestorId ?? null
+    if (gestorAtualId === usuario.colaboradorId) return true
+    const gestorPropostoId = gestorPropostoDaAlteracao(mov.alteracao)
+    if (mov.etapaAtual === 'gestor' && requerAprovacaoGestorDestino(mov.tipo, gestorAtualId, gestorPropostoId) && gestorPropostoId === usuario.colaboradorId) {
+      // Já registrou a própria decisão? A API é a autoridade; aqui é só para não reoferecer a ação.
+      return !mov.decisoes.some((d) => d.etapa === 'gestor' && d.decisao === 'aprovado' && d.aprovadorNome === usuario.nome)
+    }
+    return false
   }
   return usuario.plantaId === null || usuario.plantaId === mov.plantaId
 }

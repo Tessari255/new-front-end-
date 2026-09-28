@@ -25,20 +25,31 @@ export default function MovimentacoesListPage() {
   const movimentacoesTodas = useAppStore((s) => s.movimentacoes)
   const colaboradores = useAppStore((s) => s.colaboradores)
   const plantas = useAppStore((s) => s.plantas)
+  const centrosCusto = useAppStore((s) => s.centrosCusto)
   const plantaSelecionadaId = useAppStore((s) => s.plantaSelecionadaId)
 
   const [busca, setBusca] = useUrlParam('busca')
   const [tipo, setTipo] = useUrlParam('tipo')
   const [status, setStatus] = useUrlParam('status')
   const [etapa, setEtapa] = useUrlParam('etapa')
+  const [criador, setCriador] = useUrlParam('criador')
+  const [centroCustoId, setCentroCustoId] = useUrlParam('centroCusto')
   const [paginaStr, setPaginaStr] = useUrlParam('pagina', '1')
   const pagina = Math.max(1, parseInt(paginaStr, 10) || 1)
 
+  const movimentacoesDaPlanta = React.useMemo(() => filtrarPorPlanta(movimentacoesTodas, plantaSelecionadaId), [movimentacoesTodas, plantaSelecionadaId])
+  const criadoresDisponiveis = React.useMemo(
+    () => [...new Set(movimentacoesDaPlanta.map((m) => m.solicitanteNome))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [movimentacoesDaPlanta],
+  )
+
   const filtrados = React.useMemo(() => {
-    let lista = filtrarPorPlanta(movimentacoesTodas, plantaSelecionadaId)
+    let lista = movimentacoesDaPlanta
     if (tipo) lista = lista.filter((m) => m.tipo === tipo)
     if (status) lista = lista.filter((m) => m.status === status)
     if (etapa) lista = lista.filter((m) => m.etapaAtual === etapa)
+    if (criador) lista = lista.filter((m) => m.solicitanteNome === criador)
+    if (centroCustoId) lista = lista.filter((m) => colaboradores.find((c) => c.id === m.colaboradorId)?.centroCustoId === centroCustoId)
     if (busca.trim()) {
       const termo = busca.trim().toLowerCase()
       lista = lista.filter((m) => {
@@ -47,18 +58,20 @@ export default function MovimentacoesListPage() {
       })
     }
     return [...lista].sort((a, b) => new Date(b.dataAbertura).getTime() - new Date(a.dataAbertura).getTime())
-  }, [movimentacoesTodas, plantaSelecionadaId, tipo, status, etapa, busca, colaboradores])
+  }, [movimentacoesDaPlanta, tipo, status, etapa, criador, centroCustoId, busca, colaboradores])
 
   const totalPaginas = Math.max(1, Math.ceil(filtrados.length / ITENS_POR_PAGINA))
   const paginaEfetiva = Math.min(pagina, totalPaginas)
   const paginados = filtrados.slice((paginaEfetiva - 1) * ITENS_POR_PAGINA, paginaEfetiva * ITENS_POR_PAGINA)
-  const filtrosAtivos = Boolean(busca || tipo || status || etapa)
+  const filtrosAtivos = Boolean(busca || tipo || status || etapa || criador || centroCustoId)
 
   function limparFiltros() {
     setBusca('')
     setTipo('')
     setStatus('')
     setEtapa('')
+    setCriador('')
+    setCentroCustoId('')
     setPaginaStr('1')
   }
 
@@ -100,6 +113,10 @@ export default function MovimentacoesListPage() {
                 <SelectItem value="promocao">Promoção</SelectItem>
                 <SelectItem value="enquadramento">Enquadramento</SelectItem>
                 <SelectItem value="transferencia_cc">Transferência de CC</SelectItem>
+                <SelectItem value="merito">Mérito</SelectItem>
+                <SelectItem value="transferencia_localidade">Transferência de localidade</SelectItem>
+                <SelectItem value="alteracao_mao_de_obra">Alteração de mão de obra</SelectItem>
+                <SelectItem value="alteracao_area_atuacao">Alteração de área de atuação</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -131,6 +148,38 @@ export default function MovimentacoesListPage() {
                 <SelectItem value="rh_local">RH Local</SelectItem>
                 <SelectItem value="rh_central">RH Central</SelectItem>
                 <SelectItem value="concluida">Concluída</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="filtro-criador">Criador</Label>
+            <Select value={criador || 'todos'} onValueChange={(v) => setCriador(v === 'todos' ? '' : v)}>
+              <SelectTrigger id="filtro-criador">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                {criadoresDisponiveis.map((nome) => (
+                  <SelectItem key={nome} value={nome}>
+                    {nome}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label htmlFor="filtro-cc">Centro de custo</Label>
+            <Select value={centroCustoId || 'todos'} onValueChange={(v) => setCentroCustoId(v === 'todos' ? '' : v)}>
+              <SelectTrigger id="filtro-cc">
+                <SelectValue placeholder="Todos" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todos</SelectItem>
+                {centrosCusto.map((cc) => (
+                  <SelectItem key={cc.id} value={cc.id}>
+                    {cc.codigo} · {cc.nome}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>

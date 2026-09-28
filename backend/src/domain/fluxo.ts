@@ -1,6 +1,20 @@
-import type { Decisao, EtapaMovimentacao, PerfilDemo, TipoEvento } from '../types.ts'
+import type { Decisao, EtapaMovimentacao, PerfilDemo, TipoEvento, TipoMovimentacao } from '../types.ts'
 
 export const ETAPAS_ORDEM: Exclude<EtapaMovimentacao, 'concluida'>[] = ['gestor', 'rh_local', 'rh_central']
+
+/**
+ * Planilha (aba OBSERVAÇÕES): "Necessidade de aprovação do gestor para aprovar workflow qdo
+ * transfere funcionário." Tipos aqui exigem, na etapa `gestor`, decisão tanto do gestor de origem
+ * quanto do gestor de destino (quando um gestor de destino é informado). Mecanismo genérico e
+ * configurável: a ordem exata dessa aprovação dupla, se deveria valer também para mudança de
+ * gestor/transferência de CC e o que fazer quando o gestor de destino não é definido não estão
+ * especificados na planilha — decisão de negócio pendente. Hoje aplica-se só a este tipo.
+ */
+export const EXIGE_APROVACAO_GESTOR_DESTINO: TipoMovimentacao[] = ['transferencia_localidade']
+
+export function requerAprovacaoGestorDestino(tipo: TipoMovimentacao, gestorAtualId: string | null, gestorPropostoId: string | null): boolean {
+  return EXIGE_APROVACAO_GESTOR_DESTINO.includes(tipo) && !!gestorPropostoId && gestorPropostoId !== gestorAtualId
+}
 
 export const PERFIL_DA_ETAPA: Record<Exclude<EtapaMovimentacao, 'concluida'>, PerfilDemo> = {
   gestor: 'gestor',

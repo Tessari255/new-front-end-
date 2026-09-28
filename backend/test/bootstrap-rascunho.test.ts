@@ -41,13 +41,16 @@ describe('bootstrap e rascunhos', () => {
     for (const d of b.documentos) assert.equal(d.temConteudo, false)
   })
 
-  it('filtra tudo pelo escopo autorizado do perfil', async () => {
+  it('filtra dados sensíveis (colaboradores, movimentações) pelo escopo; catálogo de referência (plantas, CC) é sempre global', async () => {
     const gestor = json((await chamar(ctx, USUARIOS.yasmin, 'GET', '/bootstrap')))
-    assert.deepEqual(gestor.plantas.map((p: { codigo: string }) => p.codigo), ['JOI'])
-    assert.ok(gestor.colaboradores.every((c: { plantaId: string }) => c.plantaId === gestor.plantas[0].id))
-    assert.ok(gestor.movimentacoes.every((m: { plantaId: string }) => m.plantaId === gestor.plantas[0].id))
-    const rhLocal = json((await chamar(ctx, USUARIOS.rhLocalGru, 'GET', '/bootstrap')))
-    assert.deepEqual(rhLocal.plantas.map((p: { codigo: string }) => p.codigo), ['GRU'])
+    const joinville = gestor.plantas.find((p: { codigo: string }) => p.codigo === 'JOI')
+    // Plantas e centros de custo são catálogo de referência global (necessário para exibir
+    // corretamente movimentações que referenciam outra planta, ex.: transferência de localidade).
+    assert.deepEqual(gestor.plantas.map((p: { codigo: string }) => p.codigo).sort(), ['BET', 'GRU', 'JOI'])
+    assert.ok(gestor.centrosCusto.length > gestor.centrosCusto.filter((cc: { plantaId: string }) => cc.plantaId === joinville.id).length)
+    // Dados sensíveis (colaboradores, movimentações) continuam restritos à planta do gestor.
+    assert.ok(gestor.colaboradores.every((c: { plantaId: string }) => c.plantaId === joinville.id))
+    assert.ok(gestor.movimentacoes.every((m: { plantaId: string }) => m.plantaId === joinville.id))
     const auditoria = json((await chamar(ctx, USUARIOS.auditoria, 'GET', '/bootstrap')))
     assert.equal(auditoria.plantas.length, 3)
   })

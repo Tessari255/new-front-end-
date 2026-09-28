@@ -1,6 +1,6 @@
 import type pg from 'pg'
 import { withTransaction, type Queryable } from '../db/pool.ts'
-import { listarDocumentos, listarEventos, listarMovimentacoes } from '../db/queries.ts'
+import { listarDocumentos, listarEventos, listarMovimentacoes, type Escopo } from '../db/queries.ts'
 import {
   exigirEscrita,
   podeDecidirEtapa,
@@ -8,7 +8,7 @@ import {
   type UsuarioAutenticado,
 } from '../auth.ts'
 import { conflito, naoEncontrado, proibido, regraDeNegocio } from '../errors.ts'
-import { etapaInicial, transicaoDaDecisao } from '../domain/fluxo.ts'
+import { EXIGE_APROVACAO_GESTOR_DESTINO, etapaInicial, requerAprovacaoGestorDestino, transicaoDaDecisao } from '../domain/fluxo.ts'
 import { primeiroDiaDoMesSeguinte, vigenciaNoMesTravado } from '../domain/folha.ts'
 import {
   avaliarMovimentacao,
@@ -173,7 +173,15 @@ async function travarMovimentacao(client: pg.PoolClient, usuario: UsuarioAutenti
     [id],
   )
   const mov = rows[0]
-  if (!mov || !temAcessoAPlanta(usuario, mov.planta_id)) throw naoEncontrado('Movimentação não encontrada.')
+  if (!mov) throw naoEncontrado('Movimentação não encontrada.')
+  // O gestor de destino de uma transferência de localidade decide a etapa gestor mesmo estando
+  // fora do escopo de planta da movimentação (que é sempre a planta de origem).
+  const acessoComoGestorDestino =
+    usuario.perfil === 'gestor' &&
+    mov.etapa_atual === 'gestor' &&
+    EXIGE_APROVACAO_GESTOR_DESTINO.includes(mov.tipo) &&
+    gestorPropostoDaAlteracao(mov.alteracao) === usuario.colaboradorId
+  if (!temAcessoAPlanta(usuario, mov.planta_id) && !acessoComoGestorDestino) throw naoEncontrado('Movimentação não encontrada.')
   return mov
 }
 
@@ -185,11 +193,26 @@ async function reavaliar(client: pg.PoolClient, mov: MovRow, colaborador: Colabo
   return { alteracao, ...av }
 }
 
+/**
+ * Escopo de planta normal, exceto quando o usuário é o gestor de destino designado de uma
+ * transferência de localidade: nesse caso a movimentação carrega a planta de origem, fora do
+ * escopo do gestor de destino, mas ele tem interesse legítimo nesse id específico. `ids` sempre
+ * restringe a consulta a essa movimentação — liberar o escopo aqui não amplia visibilidade além dela.
+ */
+async function escopoParaMovimentacao(q: Queryable, usuario: UsuarioAutenticado, id: string): Promise<Escopo> {
+  if (usuario.perfil !== 'gestor' || usuario.colaboradorId === null || !idValido(id)) return usuario.plantasAutorizadas
+  const { rows } = await q.query<{ tipo: TipoMovimentacao; alteracao: DetalheAlteracao }>('select tipo, alteracao from movimentacoes where id = $1', [id])
+  const mov = rows[0]
+  if (!mov || !EXIGE_APROVACAO_GESTOR_DESTINO.includes(mov.tipo)) return usuario.plantasAutorizadas
+  return gestorPropostoDaAlteracao(mov.alteracao) === usuario.colaboradorId ? null : usuario.plantasAutorizadas
+}
+
 export async function recursoCanonico(q: Queryable, usuario: UsuarioAutenticado, id: string) {
+  const escopo = await escopoParaMovimentacao(q, usuario, id)
   const [movs, documentos, historico] = await Promise.all([
-    listarMovimentacoes(q, usuario.plantasAutorizadas, [id]),
-    listarDocumentos(q, usuario.plantasAutorizadas, [id]),
-    listarEventos(q, usuario.plantasAutorizadas, [id]),
+    listarMovimentacoes(q, escopo, [id]),
+    listarDocumentos(q, escopo, [id]),
+    listarEventos(q, escopo, [id]),
   ])
   const movimentacao = movs[0]
   if (!movimentacao) throw naoEncontrado('Movimentação não encontrada.')
@@ -313,6 +336,10 @@ export async function enviarParaAprovacao(pool: pg.Pool, usuario: UsuarioAutenti
 
 // ---------- Decisão de etapa ----------
 
+function gestorPropostoDaAlteracao(alteracao: DetalheAlteracao): string | null {
+  return alteracao.tipo === 'transferencia_localidade' ? alteracao.gestorPropostoId : null
+}
+
 export async function decidirEtapa(
   pool: pg.Pool,
   usuario: UsuarioAutenticado,
@@ -323,18 +350,24 @@ export async function decidirEtapa(
   const pre = idValido(id)
     ? (
         await pool.query(
-          `select m.planta_id, m.etapa_atual, m.status, c.gestor_id
+          `select m.planta_id, m.etapa_atual, m.status, m.tipo, m.alteracao, c.gestor_id
              from movimentacoes m join colaboradores c on c.id = m.colaborador_id where m.id = $1`,
           [id],
         )
       ).rows[0]
     : undefined
-  if (!pre || !temAcessoAPlanta(usuario, pre.planta_id)) throw naoEncontrado('Movimentação não encontrada.')
+  if (!pre) throw naoEncontrado('Movimentação não encontrada.')
+  const gestorPropostoId = gestorPropostoDaAlteracao(pre.alteracao)
+  // O gestor de destino decide fora do escopo de planta da movimentação (sempre a de origem).
+  const acessoComoGestorDestino =
+    usuario.perfil === 'gestor' && pre.etapa_atual === 'gestor' && EXIGE_APROVACAO_GESTOR_DESTINO.includes(pre.tipo) && gestorPropostoId === usuario.colaboradorId
+  if (!temAcessoAPlanta(usuario, pre.planta_id) && !acessoComoGestorDestino) throw naoEncontrado('Movimentação não encontrada.')
   if (pre.status !== 'em_andamento' || pre.etapa_atual === 'concluida') {
     throw conflito('A solicitação não está aguardando decisão.')
   }
   const etapaLida = pre.etapa_atual as Exclude<EtapaMovimentacao, 'concluida'>
-  if (!podeDecidirEtapa(usuario, etapaLida, { plantaId: pre.planta_id, colaboradorGestorId: pre.gestor_id })) {
+  const dualAprovacao = etapaLida === 'gestor' && requerAprovacaoGestorDestino(pre.tipo, pre.gestor_id, gestorPropostoId)
+  if (!podeDecidirEtapa(usuario, etapaLida, { plantaId: pre.planta_id, colaboradorGestorId: pre.gestor_id, colaboradorGestorDestinoId: dualAprovacao ? gestorPropostoId : null })) {
     throw proibido('Seu perfil não pode decidir a etapa atual desta solicitação.')
   }
   const comentario = corpo.comentario?.trim() || null
@@ -350,6 +383,34 @@ export async function decidirEtapa(
     if (mov.status !== 'em_andamento' || mov.etapa_atual !== etapaLida) {
       throw conflito('A solicitação já foi decidida ou mudou de etapa. Atualize a página e tente novamente.')
     }
+
+    if (dualAprovacao && corpo.decisao === 'aprovado') {
+      // travarMovimentacao já bloqueou a linha de movimentacoes: nenhuma decisão concorrente
+      // para este id avança enquanto esta transação está aberta.
+      const { rows: decisoesGestor } = await client.query<{ aprovador_id: string | null; decisao: Decisao }>(
+        `select aprovador_id, decisao from movimentacao_decisoes where movimentacao_id = $1 and etapa = 'gestor'`,
+        [mov.id],
+      )
+      if (decisoesGestor.some((d) => d.aprovador_id === usuario.id)) {
+        throw conflito('Você já registrou sua decisão nesta etapa.')
+      }
+      await client.query(
+        `insert into movimentacao_decisoes (movimentacao_id, etapa, decisao, comentario, aprovador_perfil, aprovador_nome, aprovador_id)
+         values ($1, 'gestor', 'aprovado', $2, $3, $4, $5)`,
+        [mov.id, comentario, usuario.perfil, usuario.nome, usuario.id],
+      )
+      const jaAprovaramAmbos = decisoesGestor.some((d) => d.decisao === 'aprovado')
+      if (!jaAprovaramAmbos) {
+        // Só um dos dois gestores aprovou até aqui: fica pendente, sem avançar de etapa.
+        await registrarEvento(client, mov.id, 'aprovacao', usuario, `${usuario.nome} aprovou a solicitação — aguardando aprovação do outro gestor (origem/destino).`, comentario)
+        return { protocolo: mov.protocolo, decisao: corpo.decisao }
+      }
+      const t = transicaoDaDecisao('gestor', 'aprovado')
+      await client.query(`update movimentacoes set status = $2, etapa_atual = $3, updated_at = now() where id = $1`, [mov.id, t.novoStatus, t.novaEtapa])
+      await registrarEvento(client, mov.id, t.tipoEvento, usuario, `${usuario.nome} aprovou a solicitação — aprovação dupla concluída (origem e destino).`, comentario)
+      return { protocolo: mov.protocolo, decisao: corpo.decisao }
+    }
+
     const t = transicaoDaDecisao(etapaLida, corpo.decisao)
 
     await client.query(

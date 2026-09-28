@@ -40,11 +40,10 @@ interface CargoCatalogoRow {
 }
 
 export async function carregarCatalogos(q: Queryable, escopo: Escopo) {
-  const plantas = await q.query(
-   `select id, nome, cidade, estado, codigo from plantas
-     where ($1::bigint[] is null or id = any($1::bigint[])) order by nome`,
-   [escopo],
-  )
+  // Catálogo de referência: como areas/cargos/horarios/folhas, plantas e centros de custo são
+  // sempre globais (não sensíveis) — necessário para exibir corretamente movimentações que
+  // referenciam outra planta (ex.: transferência de localidade), mesmo fora do escopo do usuário.
+  const plantas = await q.query(`select id, nome, cidade, estado, codigo from plantas order by nome`)
   const areas = await q.query(`select id, nome from areas order by nome`)
   const cargos = await q.query<CargoCatalogoRow>(
     `select c.id, c.nome, c.nivel, c.area_id, c.salario_min, c.salario_max,
@@ -60,11 +59,7 @@ export async function carregarCatalogos(q: Queryable, escopo: Escopo) {
      group by c.id order by c.id`,
     [escopo],
   )
-  const centros = await q.query(
-   `select id, codigo, nome, planta_id from centros_custo
-     where ($1::bigint[] is null or planta_id = any($1::bigint[])) order by codigo`,
-   [escopo],
-  )
+  const centros = await q.query(`select id, codigo, nome, planta_id from centros_custo order by codigo`)
   const horarios = await q.query(`select id, nome, turno, carga_horaria_semanal from horarios order by id`)
   const folhas = await q.query(`select id, nome, tipo, periodicidade from folhas order by id`)
   return {
