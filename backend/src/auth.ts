@@ -55,7 +55,7 @@ async function buscarUsuarioDaSessao(pool: pg.Pool, sessao: string): Promise<Usu
 export function escopoDePlantas(row: Pick<UsuarioRow, 'perfil' | 'planta_id' | 'colaborador_planta_id'>): string[] | null {
   if (row.perfil === 'gestor') return row.colaborador_planta_id ? [row.colaborador_planta_id] : []
   if (row.perfil === 'rh_local') return row.planta_id ? [row.planta_id] : []
-  // RH Central e Auditoria: sem planta = todas; com planta = apenas a planta indicada.
+  // RH Central, Auditoria e Share: sem planta = todas; com planta = apenas a planta indicada.
   return row.planta_id ? [row.planta_id] : null
 }
 
@@ -156,6 +156,8 @@ export function temAcessoAPlanta(u: UsuarioAutenticado, plantaId: string): boole
 
 export function exigirEscrita(u: UsuarioAutenticado) {
   if (u.perfil === 'auditoria') throw proibido('Auditoria possui acesso somente leitura.')
+  // Share só trava/libera o fechamento da folha; não abre, edita nem decide movimentações.
+  if (u.perfil === 'share') throw proibido('Share não tem permissão para movimentações — apenas para o fechamento da folha.')
 }
 
 export function exigirPerfil(u: UsuarioAutenticado, ...perfis: PerfilDemo[]) {

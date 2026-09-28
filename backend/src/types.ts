@@ -2,7 +2,7 @@
 
 export type StatusColaborador = 'ativo' | 'afastado' | 'inativo'
 export type StatusSincronizacao = 'sincronizado' | 'divergente' | 'pendente'
-export type PerfilDemo = 'gestor' | 'rh_local' | 'rh_central' | 'auditoria'
+export type PerfilDemo = 'gestor' | 'rh_local' | 'rh_central' | 'auditoria' | 'share'
 export type EtapaMovimentacao = 'gestor' | 'rh_local' | 'rh_central' | 'concluida'
 export type StatusMovimentacao = 'rascunho' | 'em_andamento' | 'devolvida' | 'reprovada' | 'aprovada'
 export type TipoMovimentacao =

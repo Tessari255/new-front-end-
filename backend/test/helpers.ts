@@ -80,6 +80,7 @@ export const USUARIOS = {
   rhLocalGru: 'demo.rh-local.gru',
   rhCentral: 'demo.rh-central',
   auditoria: 'demo.auditoria',
+  share: 'demo.share',
 } as const
 
 export function chamar(ctx: Ctx, subject: string | null, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, payload?: unknown): Promise<LightMyRequestResponse> {

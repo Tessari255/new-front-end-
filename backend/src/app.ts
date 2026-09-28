@@ -14,6 +14,7 @@ import { rotasCargos } from './routes/cargos.ts'
 import { rotasConciliacao } from './routes/conciliacao.ts'
 import { rotasDocumentos } from './routes/documentos.ts'
 import { rotasExportacoes } from './routes/exportacoes.ts'
+import { rotasFolha } from './routes/folha.ts'
 import { rotasMovimentacoes } from './routes/movimentacoes.ts'
 import { rotasDemo, rotasOperacao, rotasSaude } from './routes/ops.ts'
 
@@ -74,6 +75,7 @@ export async function buildApp(config: Config, pool: pg.Pool, deps: { enviarEmai
       rotasDocumentos(api, pool)
       rotasConciliacao(api, pool)
       rotasExportacoes(api, pool)
+      rotasFolha(api, pool)
       rotasOperacao(api, pool)
       if (config.demoMode) rotasDemo(api, pool)
       if (config.emailSenha) rotasEmailSenha(api, pool, config.emailSenha, deps.enviarEmail ?? criarEnvioSmtp(config.emailSenha.smtp))

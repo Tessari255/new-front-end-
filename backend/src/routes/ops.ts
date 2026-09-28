@@ -12,6 +12,7 @@ const DESCRICAO_PERFIL: Record<string, string> = {
   rh_local: 'Confere dados e políticas da planta (2ª etapa).',
   rh_central: 'Aprovação final e liberação para processamento (3ª etapa).',
   auditoria: 'Visualização completa do fluxo, sem ações de aprovação.',
+  share: 'Trava e libera o fechamento mensal da folha.',
 }
 
 const MENSAGENS_FALHA = [
@@ -64,7 +65,7 @@ export function rotasDemo(app: FastifyInstance, pool: pg.Pool) {
       `select u.id, u.nome, u.perfil, p.nome as planta_nome
          from usuarios u left join plantas p on p.id = u.planta_id
         where u.ativo
-        order by array_position(array['gestor','rh_local','rh_central','auditoria'], u.perfil), u.id`,
+        order by array_position(array['gestor','rh_local','rh_central','auditoria','share'], u.perfil), u.id`,
     )
     return {
       usuarios: rows.map((r) => ({

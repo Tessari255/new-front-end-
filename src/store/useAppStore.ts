@@ -9,6 +9,7 @@ import type {
   Divergencia,
   Documento,
   EventoHistorico,
+  FechamentoFolha,
   Folha,
   Horario,
   LogIntegracao,
@@ -45,6 +46,7 @@ export interface DadosBootstrap {
   conferencia: ConferenciaConciliacao
   logsIntegracao: LogIntegracao[]
   currentUser: Usuario
+  fechamentoFolha: FechamentoFolha
 }
 
 /** Resposta canônica de qualquer mutação de movimentação (recurso + documentos + eventos + logs). */
@@ -82,6 +84,7 @@ interface DadosDoServidor {
   divergencias: Divergencia[]
   conferencia: ConferenciaConciliacao
   logsIntegracao: LogIntegracao[]
+  fechamentoFolha: FechamentoFolha
 }
 
 interface AppState extends DadosDoServidor {
@@ -128,6 +131,7 @@ const VAZIO: DadosDoServidor = {
   divergencias: [],
   conferencia: { executadaEm: new Date(0).toISOString(), registrosComparados: 0 },
   logsIntegracao: [],
+  fechamentoFolha: { mesTravado: null, travadoEm: null, travadoPorNome: null },
 }
 
 export const useAppStore = create<AppState>()(

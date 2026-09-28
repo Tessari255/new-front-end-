@@ -647,6 +647,7 @@ function gerarUsuarios(colaboradores: SColaborador[]): SUsuario[] {
     ...rhLocal,
     { subject: 'demo.rh-central', nome: 'RH Central — Sede Corporativa', email: 'rh.central@nexopeople.demo.br', perfil: 'rh_central', plantaKey: null, colaboradorKey: null },
     { subject: 'demo.auditoria', nome: 'Auditoria', email: 'auditoria@nexopeople.demo.br', perfil: 'auditoria', plantaKey: null, colaboradorKey: null },
+    { subject: 'demo.share', nome: 'Share — Fechamento da Folha', email: 'share@nexopeople.demo.br', perfil: 'share', plantaKey: null, colaboradorKey: null },
   ]
 }
 

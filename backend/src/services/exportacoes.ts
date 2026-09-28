@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto'
 import type pg from 'pg'
 import { withTransaction, type Queryable } from '../db/pool.ts'
 import { exigirPerfil, temAcessoAPlanta, type UsuarioAutenticado } from '../auth.ts'
-import { conflito, naoEncontrado } from '../errors.ts'
+import { conflito, naoEncontrado, regraDeNegocio } from '../errors.ts'
+import { vigenciaNoMesTravado } from '../domain/folha.ts'
 import type { DetalheAlteracao, TipoMovimentacao } from '../types.ts'
 
 export type TipoExportacao = 'apdata' | 'employee_central'
@@ -232,7 +233,7 @@ export async function gerarExportacao(
   if (!/^\d{1,18}$/.test(movId)) throw naoEncontrado('Movimentação não encontrada.')
   return withTransaction(pool, async (client) => {
     const { rows } = await client.query(
-      `select m.id, m.protocolo, m.tipo, m.vigencia, m.justificativa, m.alteracao, m.status, m.planta_id,
+      `select m.id, m.protocolo, m.tipo, m.vigencia, m.justificativa, m.alteracao, m.status, m.planta_id, m.rh_liberada_folha_em,
               p.nome as planta_nome, c.matricula, c.nome as colaborador_nome, c.apdata_id, c.employee_central_id
          from movimentacoes m
          join colaboradores c on c.id = m.colaborador_id
@@ -244,6 +245,13 @@ export async function gerarExportacao(
     if (!m || !temAcessoAPlanta(usuario, m.planta_id)) throw naoEncontrado('Movimentação não encontrada.')
     if (m.status !== 'aprovada') {
       throw conflito('Somente movimentações aprovadas podem gerar arquivos.', 'MOVIMENTACAO_NAO_APROVADA')
+    }
+    if (!m.rh_liberada_folha_em) {
+      throw conflito('A movimentação ainda não foi liberada pelo RH para entrada na Folha.', 'NAO_LIBERADA_PARA_FOLHA')
+    }
+    const { rows: folhaRows } = await client.query<{ mes_travado: string | null }>('select mes_travado from folha_fechamento where id = 1')
+    if (vigenciaNoMesTravado(m.vigencia, folhaRows[0]?.mes_travado ?? null)) {
+      throw regraDeNegocio('FOLHA_FECHADA', 'O mês de vigência desta movimentação está com a folha travada pelo Share.')
     }
     const geradoEm = new Date()
     const dados: DadosExportacao = {

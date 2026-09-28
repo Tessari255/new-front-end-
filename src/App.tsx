@@ -17,6 +17,7 @@ const MovimentacaoDetailPage = lazy(() => import('@/pages/MovimentacaoDetailPage
 const AprovacoesPage = lazy(() => import('@/pages/AprovacoesPage'))
 const ConciliacaoPage = lazy(() => import('@/pages/ConciliacaoPage'))
 const DivergenciaDetailPage = lazy(() => import('@/pages/DivergenciaDetailPage'))
+const FolhaPage = lazy(() => import('@/pages/FolhaPage'))
 const HistoricoPage = lazy(() => import('@/pages/HistoricoPage'))
 const IntegrationLogPage = lazy(() => import('@/pages/IntegrationLogPage'))
 const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
@@ -90,6 +91,7 @@ export default function App() {
                   <Route path="aprovacoes" element={<AprovacoesPage />} />
                   <Route path="conciliacao" element={<ConciliacaoPage />} />
                   <Route path="conciliacao/:id" element={<DivergenciaDetailPage />} />
+                  <Route path="folha" element={<FolhaPage />} />
                   <Route path="historico" element={<HistoricoPage />} />
                   <Route path="integracao" element={<IntegrationLogPage />} />
                   <Route path="*" element={<NotFoundPage />} />

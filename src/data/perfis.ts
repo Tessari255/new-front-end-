@@ -25,6 +25,12 @@ export const PERFIS_DEMO: PerfilDemoInfo[] = [
     descricao: 'Visualização completa do fluxo, sem ações de aprovação.',
     etapa: null,
   },
+  {
+    id: 'share',
+    nome: 'Share',
+    descricao: 'Trava e libera o fechamento mensal da folha.',
+    etapa: null,
+  },
 ]
 
 export function getPerfilDemo(id: string): PerfilDemoInfo | undefined {

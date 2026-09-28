@@ -71,6 +71,7 @@ export const bodyConfiguracaoCargo = obj({
   salarioBase: { type: ['number', 'null'], minimum: 0, maximum: 999999999999.99 },
   ipe: { type: ['integer', 'null'], minimum: 1, maximum: 5 },
 })
+export const bodyTravarFolha = obj({ mes: { type: 'string', pattern: '^[0-9]{4}-[0-9]{2}(-[0-9]{2})?$' } })
 
 // ---------- Responses ----------
 
@@ -126,25 +127,32 @@ const decisao = obj(
   },
   ['etapa', 'aprovadorPerfil', 'aprovadorNome', 'decisao', 'data'],
 )
-export const movimentacao = obj({
-  id: str,
-  protocolo: str,
-  colaboradorId: str,
-  tipo: str,
-  plantaId: str,
-  solicitanteNome: str,
-  dataAbertura: str,
-  vigencia: str,
-  etapaAtual: str,
-  status: str,
-  alteracao: { type: 'object', additionalProperties: true },
-  justificativa: str,
-  potencial: strNull,
-  documentosIds: arr(str),
-  checagens: arr(checagem),
-  decisoes: arr(decisao),
-  arquivosGerados: obj({ apdataGeradoEm: str, employeeCentralGeradoEm: str }, []),
-})
+export const movimentacao = obj(
+  {
+    id: str,
+    protocolo: str,
+    colaboradorId: str,
+    tipo: str,
+    plantaId: str,
+    solicitanteNome: str,
+    dataAbertura: str,
+    vigencia: str,
+    etapaAtual: str,
+    status: str,
+    alteracao: { type: 'object', additionalProperties: true },
+    justificativa: str,
+    potencial: strNull,
+    documentosIds: arr(str),
+    checagens: arr(checagem),
+    decisoes: arr(decisao),
+    rhLiberadaFolhaEm: str,
+    arquivosGerados: obj({ apdataGeradoEm: str, employeeCentralGeradoEm: str }, []),
+  },
+  [
+    'id', 'protocolo', 'colaboradorId', 'tipo', 'plantaId', 'solicitanteNome', 'dataAbertura', 'vigencia', 'etapaAtual',
+    'status', 'alteracao', 'justificativa', 'potencial', 'documentosIds', 'checagens', 'decisoes', 'arquivosGerados',
+  ],
+)
 export const documento = obj(
   {
     id: str,
@@ -194,6 +202,7 @@ export const usuario = obj({
   plantaId: strNull,
   colaboradorId: strNull,
 })
+export const fechamentoFolha = obj({ mesTravado: strNull, travadoEm: strNull, travadoPorNome: strNull })
 
 export const respostaBootstrap = obj({
   plantas: arr(planta),
@@ -210,6 +219,7 @@ export const respostaBootstrap = obj({
   conferencia,
   logsIntegracao: arr(logIntegracao),
   currentUser: usuario,
+  fechamentoFolha,
 })
 
 /** Recurso canônico devolvido por toda mutação de movimentação. */
@@ -242,3 +252,5 @@ export const respostaUsuariosDemo = obj({
 })
 
 export const respostaUsuarioAtual = obj({ usuario })
+
+export const respostaFechamentoFolha = obj({ fechamento: fechamentoFolha, logs: arr(logIntegracao) })

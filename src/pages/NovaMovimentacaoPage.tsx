@@ -17,6 +17,7 @@ import { compararAlteracao } from '@/lib/movimentacao'
 import { rotuloPotencial, rotuloTipoMovimentacao } from '@/lib/rotulos'
 import { formatCurrency } from '@/lib/format'
 import { evidenciaObrigatoria, gestorValido, cargoCompativelComPlanta, centroCustoValidoParaPlanta, percentualAlteracaoSalarial, faixaSalarialStatus, NOTA_REGRAS_DEMO, gerarChecagens } from '@/data/rules'
+import { primeiroDiaDoMesSeguinte, vigenciaNoMesTravado } from '@/lib/folha'
 import { criarMovimentacao, atualizarRascunho, enviarParaAprovacao as enviarRascunhoParaAprovacao } from '@/services/movimentacoesService'
 
 const TIPOS: { valor: TipoMovimentacao; titulo: string; descricao: string }[] = [
@@ -147,6 +148,7 @@ export default function NovaMovimentacaoPage() {
   const movimentacoes = useAppStore((s) => s.movimentacoes)
   const documentos = useAppStore((s) => s.documentos)
   const currentUser = useAppStore((s) => s.currentUser)
+  const fechamentoFolha = useAppStore((s) => s.fechamentoFolha)
 
   const rascunhoId = searchParams.get('rascunhoId')
   const [rascunhoCriadoId, setRascunhoCriadoId] = React.useState<string | null>(null)
@@ -263,6 +265,9 @@ export default function NovaMovimentacaoPage() {
     const erros: Record<string, string> = {}
     if (!colaborador || !form.tipo) return erros
     if (!form.vigencia || Number.isNaN(new Date(form.vigencia).getTime())) erros.vigencia = 'Informe uma data de vigência válida.'
+    else if (vigenciaNoMesTravado(form.vigencia, fechamentoFolha.mesTravado)) {
+      erros.vigencia = `Mês fechado para lançamentos (fechamento da folha). Use uma vigência a partir de ${primeiroDiaDoMesSeguinte(fechamentoFolha.mesTravado!)}.`
+    }
 
     if (form.tipo === 'mudanca_gestor') {
       const candidato = colaboradores.find((c) => c.id === form.gestorPropostoId)
@@ -532,6 +537,11 @@ export default function NovaMovimentacaoPage() {
                     <Label htmlFor="input-vigencia">Data de vigência</Label>
                     <Input id="input-vigencia" type="date" className="max-w-[220px]" value={form.vigencia} onChange={(e) => atualizar('vigencia', e.target.value)} invalid={!!mostrarErro('vigencia')} />
                     <FieldError>{mostrarErro('vigencia')}</FieldError>
+                    {fechamentoFolha.mesTravado && (
+                      <FieldHint>
+                        Folha fechada para {fechamentoFolha.mesTravado.slice(0, 7)} (Share). Vigências nesse mês só poderão ser enviadas após a liberação.
+                      </FieldHint>
+                    )}
                   </div>
                   <div>
                     <Label htmlFor="select-potencial">Potencial (opcional)</Label>

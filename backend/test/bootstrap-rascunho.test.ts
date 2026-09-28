@@ -24,7 +24,7 @@ describe('bootstrap e rascunhos', () => {
     const b = json(res)
     for (const chave of [
       'plantas', 'areas', 'cargos', 'centrosCusto', 'horarios', 'folhas', 'colaboradores', 'movimentacoes',
-      'documentos', 'historico', 'divergencias', 'conferencia', 'logsIntegracao', 'currentUser',
+      'documentos', 'historico', 'divergencias', 'conferencia', 'logsIntegracao', 'currentUser', 'fechamentoFolha',
     ]) {
       assert.ok(chave in b, `faltou ${chave}`)
     }

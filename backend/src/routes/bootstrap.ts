@@ -11,6 +11,7 @@ import {
   listarMovimentacoes,
   ultimaConferencia,
 } from '../db/queries.ts'
+import { obterFechamento } from '../services/folha.ts'
 import { respostaBootstrap, respostaLogs } from '../schemas.ts'
 
 export function rotasBootstrap(app: FastifyInstance, pool: pg.Pool) {
@@ -29,6 +30,7 @@ export function rotasBootstrap(app: FastifyInstance, pool: pg.Pool) {
       const divergencias = await listarDivergencias(client, escopo)
       const conferencia = await ultimaConferencia(client)
       const logsIntegracao = await listarLogs(client, usuario)
+      const fechamentoFolha = await obterFechamento(client)
       await client.query('commit')
       return {
         ...catalogos,
@@ -40,6 +42,7 @@ export function rotasBootstrap(app: FastifyInstance, pool: pg.Pool) {
         conferencia,
         logsIntegracao,
         currentUser: usuarioPublico(usuario),
+        fechamentoFolha,
       }
     } catch (err) {
       await client.query('rollback').catch(() => undefined)

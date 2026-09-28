@@ -9,6 +9,7 @@ import {
 } from '../auth.ts'
 import { conflito, naoEncontrado, proibido, regraDeNegocio } from '../errors.ts'
 import { etapaInicial, transicaoDaDecisao } from '../domain/fluxo.ts'
+import { primeiroDiaDoMesSeguinte, vigenciaNoMesTravado } from '../domain/folha.ts'
 import {
   avaliarMovimentacao,
   idsReferenciados,
@@ -269,6 +270,15 @@ export async function enviarParaAprovacao(pool: pg.Pool, usuario: UsuarioAutenti
     }
     const colaborador = await carregarColaboradorCtx(client, mov.colaborador_id)
     if (!colaborador) throw naoEncontrado('Colaborador não encontrado.')
+
+    const { rows: folhaRows } = await client.query<{ mes_travado: string | null }>('select mes_travado from folha_fechamento where id = 1')
+    const mesTravado = folhaRows[0]?.mes_travado ?? null
+    if (vigenciaNoMesTravado(mov.vigencia, mesTravado)) {
+      const proximo = primeiroDiaDoMesSeguinte(mesTravado!)
+      throw regraDeNegocio('FOLHA_FECHADA', 'A folha está fechada para o mês da vigência informada. Ajuste a vigência para o mês seguinte.', {
+        vigencia: `Mês fechado para lançamentos. Use uma vigência a partir de ${proximo}.`,
+      })
+    }
 
     const { alteracao, checagens, fieldErrors, podeEnviar } = await reavaliar(client, mov, colaborador)
     if (!podeEnviar) {

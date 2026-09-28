@@ -15,8 +15,15 @@ describe('exportações demonstrativas', () => {
     return rows[0].id as string
   }
 
+  /** Processamento (geração de arquivo) exige a liberação do RH para entrada na Folha, além de aprovada. */
+  const liberarParaFolha = async (id: string) => {
+    const res = await chamar(ctx, USUARIOS.rhCentral, 'POST', `/movimentacoes/${id}/liberar-folha`)
+    if (res.statusCode !== 200) throw new Error(`liberação para a folha falhou: ${res.body}`)
+  }
+
   it('gera a carga Apdata (CSV) de movimentação aprovada e audita hash, autor, timestamp e evento', async () => {
     const id = await idPorProtocolo('MOV-2026-0001') // promoção aprovada
+    await liberarParaFolha(id)
     const antes = json(await chamar(ctx, USUARIOS.rhCentral, 'GET', `/movimentacoes/${id}`))
     const res = await chamar(ctx, USUARIOS.rhCentral, 'POST', `/movimentacoes/${id}/exportacoes/apdata`)
     assert.equal(res.statusCode, 200, res.body)
@@ -49,6 +56,7 @@ describe('exportações demonstrativas', () => {
 
   it('gera o arquivo Employee Central (JSON) demonstrativo, marcado como não homologado', async () => {
     const id = await idPorProtocolo('MOV-2026-0010') // alteração salarial aprovada
+    await liberarParaFolha(id)
     const res = await chamar(ctx, USUARIOS.rhCentral, 'POST', `/movimentacoes/${id}/exportacoes/employee-central`)
     assert.equal(res.statusCode, 200, res.body)
     assert.match(String(res.headers['content-disposition']), /employee-central-demo-MOV-2026-0010\.json/)
@@ -91,6 +99,7 @@ describe('exportações demonstrativas', () => {
 
   it('CSV neutraliza separadores e quebras de linha da justificativa', async () => {
     const id = await idPorProtocolo('MOV-2026-0001')
+    await liberarParaFolha(id)
     await ctx.pool.query(`update movimentacoes set justificativa = $2 where id = $1`, [id, 'linha um;com ponto e vírgula\nlinha dois'])
     const res = await chamar(ctx, USUARIOS.rhCentral, 'POST', `/movimentacoes/${id}/exportacoes/apdata`)
     const linhas = res.body.split('\n')

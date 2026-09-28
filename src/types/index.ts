@@ -263,10 +263,19 @@ export interface Movimentacao {
   documentosIds: string[]
   checagens: ChecagemRegra[]
   decisoes: DecisaoEtapa[]
+  /** Liberação do RH para entrada na Folha — gate distinto da aprovação de fluxo (rh_central). */
+  rhLiberadaFolhaEm?: string
   arquivosGerados: {
     apdataGeradoEm?: string
     employeeCentralGeradoEm?: string
   }
+}
+
+/** Fechamento mensal da folha (aba OBSERVAÇÕES): trava única, controlada pelo perfil Share. */
+export interface FechamentoFolha {
+  mesTravado: string | null
+  travadoEm: string | null
+  travadoPorNome: string | null
 }
 
 // ---------- Conciliação ----------
@@ -296,7 +305,7 @@ export interface ConferenciaConciliacao {
 
 // ---------- Perfis de demonstração ----------
 
-export type PerfilDemo = 'gestor' | 'rh_local' | 'rh_central' | 'auditoria'
+export type PerfilDemo = 'gestor' | 'rh_local' | 'rh_central' | 'auditoria' | 'share'
 
 /** Usuário autenticado (no modo demo: escolhido entre os usuários seedados; nunca enviado como perfil). */
 export interface Usuario {

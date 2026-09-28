@@ -194,6 +194,10 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
       )
     }
 
+    // Linha singleton: truncar 'usuarios' (CASCADE) também apaga esta linha por causa da FK
+    // em travado_por_id — precisa ser recriada a cada reset, sempre com a folha liberada.
+    await q.query(`insert into folha_fechamento (id, mes_travado) values (1, null) on conflict (id) do nothing`)
+
     return { colaboradores: d.colaboradores.length, movimentacoes: d.movimentacoes.length, divergencias: d.divergencias.length }
   })
 }
@@ -201,7 +205,7 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
 const TABELAS_DE_NEGOCIO = [
   'logs_integracao', 'exports', 'divergencias', 'movimentacao_documentos', 'movimentacao_eventos', 'movimentacao_decisoes',
   'movimentacoes', 'conciliacoes', 'colaborador_fontes', 'usuarios', 'colaboradores', 'folhas', 'horarios', 'centros_custo',
-  'cargo_plantas', 'cargos', 'areas', 'plantas',
+  'cargo_plantas', 'cargos', 'areas', 'plantas', 'folha_fechamento_eventos', 'folha_fechamento',
 ]
 
 /** Restaura o estado inicial da demonstração. Chamado somente com DEMO_MODE=true. */
