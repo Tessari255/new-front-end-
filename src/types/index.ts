@@ -112,6 +112,7 @@ export type StatusMovimentacao =
   | 'devolvida'
   | 'reprovada'
   | 'aprovada'
+  | 'cancelada'
 
 export interface AlteracaoMudancaGestor {
   tipo: 'mudanca_gestor'
@@ -240,6 +241,7 @@ export interface EventoHistorico {
     | 'reprovacao'
     | 'conclusao'
     | 'geracao_arquivo'
+    | 'cancelamento'
   data: string // ISO datetime
   autor: string
   descricao: string
@@ -263,6 +265,10 @@ export interface Movimentacao {
   documentosIds: string[]
   checagens: ChecagemRegra[]
   decisoes: DecisaoEtapa[]
+  /** Id da raiz do chamado (própria linha quando esta é a raiz) — agrupa múltiplas alterações. */
+  chamadoId: string
+  /** Preenchido quando esta linha é uma alteração adicional de um chamado já existente. */
+  chamadoPaiId?: string | null
   /** Liberação do RH para entrada na Folha — gate distinto da aprovação de fluxo (rh_central). */
   rhLiberadaFolhaEm?: string
   arquivosGerados: {

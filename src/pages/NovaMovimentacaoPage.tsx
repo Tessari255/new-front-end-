@@ -151,6 +151,7 @@ export default function NovaMovimentacaoPage() {
   const fechamentoFolha = useAppStore((s) => s.fechamentoFolha)
 
   const rascunhoId = searchParams.get('rascunhoId')
+  const chamadoPaiId = searchParams.get('chamadoPaiId')
   const [rascunhoCriadoId, setRascunhoCriadoId] = React.useState<string | null>(null)
   const idRascunho = rascunhoId ?? rascunhoCriadoId
   const rascunhoExistente = idRascunho ? movimentacoes.find((m) => m.id === idRascunho) : undefined
@@ -380,6 +381,7 @@ export default function NovaMovimentacaoPage() {
       justificativa: form.justificativa,
       alteracao,
       potencial: form.potencial || null,
+      chamadoPaiId,
       arquivos: form.arquivos.map((a) => a.file),
     }
   }
@@ -469,7 +471,11 @@ export default function NovaMovimentacaoPage() {
       <PageHeader
         breadcrumbs={[{ label: 'Movimentações', to: '/movimentacoes' }, { label: rascunhoDaUrl ? rascunhoDaUrl.protocolo : 'Nova movimentação' }]}
         title={rascunhoDaUrl ? `Editar rascunho — ${rascunhoDaUrl.protocolo}` : 'Nova movimentação'}
-        description="Siga as etapas para registrar uma solicitação de movimentação e encaminhá-la para aprovação."
+        description={
+          chamadoPaiId
+            ? 'Esta alteração será registrada no mesmo chamado, para o mesmo colaborador — mantém o histórico e a aprovação independentes.'
+            : 'Siga as etapas para registrar uma solicitação de movimentação e encaminhá-la para aprovação.'
+        }
       />
 
       <Card>

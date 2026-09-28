@@ -9,9 +9,10 @@ const CORES: Record<StatusMovimentacao, string> = {
   devolvida: '#D97706',
   reprovada: '#DC2626',
   aprovada: '#16A34A',
+  cancelada: '#64748B',
 }
 
-const ORDEM: StatusMovimentacao[] = ['em_andamento', 'aprovada', 'devolvida', 'reprovada', 'rascunho']
+const ORDEM: StatusMovimentacao[] = ['em_andamento', 'aprovada', 'devolvida', 'reprovada', 'rascunho', 'cancelada']
 
 export function StatusDistributionChart({ distribuicao }: { distribuicao: Record<StatusMovimentacao, number> }) {
   const navigate = useNavigate()

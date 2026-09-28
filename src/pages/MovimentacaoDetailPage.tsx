@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Pencil, Send, Plus, FileText, ClipboardCheck, Download } from 'lucide-react'
+import { Pencil, Send, Plus, FileText, ClipboardCheck, Download, Ban, Layers } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/Button'
@@ -26,10 +26,11 @@ import { rotuloIpe, rotuloPotencial, rotuloStatusMovimentacao, rotuloTipoDocumen
 import { formatBytes, formatDate, formatDateTime } from '@/lib/format'
 import { tempoDeCasa } from '@/lib/tempoDeCasa'
 import { NOTA_REGRAS_DEMO } from '@/data/rules'
-import type { Documento } from '@/types'
-import { adicionarDocumento, baixarDocumento, enviarParaAprovacao } from '@/services/movimentacoesService'
+import type { Documento, StatusMovimentacao } from '@/types'
+import { adicionarDocumento, baixarDocumento, cancelarMovimentacao, enviarParaAprovacao } from '@/services/movimentacoesService'
 
 const TIPOS_DOCUMENTO_SELECIONAVEIS: Documento['tipo'][] = ['evidencia', 'documento_aprovado', 'offer_letter', 'c_req', 'e_req', 'carta_promocao', 'carta_merito']
+const STATUS_CANCELAVEIS: StatusMovimentacao[] = ['rascunho', 'em_andamento', 'devolvida', 'reprovada']
 
 export default function MovimentacaoDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -51,6 +52,8 @@ export default function MovimentacaoDetailPage() {
   const [dialogAberto, setDialogAberto] = React.useState(false)
   const [arquivosNovos, setArquivosNovos] = React.useState<ArquivoSelecionado[]>([])
   const [salvandoDocs, setSalvandoDocs] = React.useState(false)
+  const [dialogCancelarAberto, setDialogCancelarAberto] = React.useState(false)
+  const [cancelando, setCancelando] = React.useState(false)
   const [tipoDocumentoNovo, setTipoDocumentoNovo] = React.useState<Documento['tipo']>(
     mov && (mov.tipo === 'promocao' || mov.tipo === 'alteracao_cargo') ? 'carta_promocao'
     : mov && (mov.tipo === 'merito' || mov.tipo === 'enquadramento') ? 'carta_merito'
@@ -84,6 +87,21 @@ export default function MovimentacaoDetailPage() {
   const ccAtual = colaborador ? centrosCusto.find((c) => c.id === colaborador.centroCustoId) : undefined
   const gestorAtual = colaborador ? colaboradores.find((c) => c.id === colaborador.gestorId) : undefined
   const ipeAtual = colaborador ? ipeDoCargoNaPlanta(colaborador.cargoId, colaborador.plantaId) : null
+  const outrasAlteracoesDoChamado = movimentacoes.filter((m) => m.id !== mov.id && m.chamadoId === mov.chamadoId)
+
+  async function cancelar() {
+    if (!mov) return
+    setCancelando(true)
+    try {
+      await cancelarMovimentacao(mov.id)
+      notificar({ tipo: 'aviso', titulo: 'Solicitação cancelada', descricao: mov.protocolo })
+      setDialogCancelarAberto(false)
+    } catch (erro) {
+      notificarErro(erro, 'Não foi possível cancelar a solicitação')
+    } finally {
+      setCancelando(false)
+    }
+  }
 
   async function reenviar() {
     if (!mov) return
@@ -178,6 +196,43 @@ export default function MovimentacaoDetailPage() {
             </CardHeader>
             <CardContent>
               <ComparacaoCampos campos={campos} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>Alterações do mesmo chamado ({outrasAlteracoesDoChamado.length + 1})</CardTitle>
+              </div>
+              <Button asChild variant="secondary" size="sm">
+                <Link to={`/movimentacoes/nova?chamadoPaiId=${mov.chamadoId}&colaboradorId=${mov.colaboradorId}`}>
+                  <Plus className="size-3.5" aria-hidden="true" />
+                  Nova alteração neste chamado
+                </Link>
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {outrasAlteracoesDoChamado.length === 0 ? (
+                <EmptyState
+                  icon={Layers}
+                  title="Nenhuma outra alteração neste chamado"
+                  description="É possível registrar mais de uma alteração para o mesmo colaborador em um único chamado, cada uma com sua própria aprovação e histórico."
+                />
+              ) : (
+                <ul className="divide-y divide-[var(--color-border)]">
+                  {outrasAlteracoesDoChamado.map((m) => (
+                    <li key={m.id} className="flex items-center justify-between gap-3 py-3">
+                      <div className="min-w-0">
+                        <Link to={`/movimentacoes/${m.id}`} className="text-[13.5px] font-medium text-[var(--color-accent-hover)] hover:underline">
+                          {m.protocolo}
+                        </Link>
+                        <p className="truncate text-xs text-[var(--color-ink-muted)]">{rotuloTipoMovimentacao(m.tipo)}</p>
+                      </div>
+                      <Badge tom={tomStatusMovimentacao(m.status)}>{rotuloStatusMovimentacao(m.status)}</Badge>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
 
@@ -340,6 +395,32 @@ export default function MovimentacaoDetailPage() {
                   { label: 'Vigência', value: formatDate(mov.vigencia) },
                 ]}
               />
+              {STATUS_CANCELAVEIS.includes(mov.status) && (
+                <Dialog open={dialogCancelarAberto} onOpenChange={setDialogCancelarAberto}>
+                  <DialogTrigger asChild>
+                    <Button variant="outlineDanger" size="sm" className="mt-4 w-full">
+                      <Ban className="size-3.5" aria-hidden="true" />
+                      Cancelar solicitação
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Cancelar solicitação</DialogTitle>
+                      <DialogDescription>
+                        {mov.protocolo} será marcada como cancelada. Esta ação não afeta outras alterações do mesmo chamado e não pode ser desfeita.
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter>
+                      <Button variant="secondary" onClick={() => setDialogCancelarAberto(false)} disabled={cancelando}>
+                        Voltar
+                      </Button>
+                      <Button variant="danger" onClick={cancelar} loading={cancelando}>
+                        Confirmar cancelamento
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              )}
             </CardContent>
           </Card>
 

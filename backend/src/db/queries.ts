@@ -189,6 +189,8 @@ interface MovimentacaoRow {
   justificativa: string
   potencial: string | null
   checagens: ChecagemRegra[]
+  chamado_pai_id: string | null
+  chamado_id: string
   rh_liberada_folha_em: Date | null
   apdata_gerado_em: Date | null
   employee_central_gerado_em: Date | null
@@ -207,7 +209,8 @@ interface DecisaoRow {
 export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: string[] | null = null) {
   const movs = await q.query<MovimentacaoRow>(
     `select id, protocolo, colaborador_id, planta_id, solicitante_nome, tipo, data_abertura, vigencia, etapa_atual,
-            status, alteracao, justificativa, potencial, checagens, rh_liberada_folha_em, apdata_gerado_em, employee_central_gerado_em
+            status, alteracao, justificativa, potencial, checagens, chamado_pai_id, coalesce(chamado_pai_id, id) as chamado_id,
+            rh_liberada_folha_em, apdata_gerado_em, employee_central_gerado_em
        from movimentacoes
       where ($1::bigint[] is null or planta_id = any($1::bigint[]))
         and ($2::bigint[] is null or id = any($2::bigint[]))
@@ -254,6 +257,8 @@ export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: str
     potencial: m.potencial,
     documentosIds: docsPorMov.get(m.id) ?? [],
     checagens: m.checagens,
+    chamadoId: m.chamado_id,
+    chamadoPaiId: m.chamado_pai_id,
     rhLiberadaFolhaEm: iso(m.rh_liberada_folha_em),
     decisoes: (decisoesPorMov.get(m.id) ?? []).map((d) => ({
       etapa: d.etapa,

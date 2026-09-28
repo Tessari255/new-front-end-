@@ -40,6 +40,8 @@ export interface CorpoMovimentacao {
   justificativa?: string | null
   alteracao?: Omit<PropostaAlteracao, 'tipo'> & { tipo?: TipoMovimentacao }
   potencial?: 'baixo' | 'estavel' | 'alto' | null
+  /** Anexa esta alteração a um chamado existente (qualquer id da mesma "linha" já serve; é normalizado para a raiz). */
+  chamadoPaiId?: string | null
 }
 
 interface MovRow {
@@ -53,6 +55,7 @@ interface MovRow {
   vigencia: string | null
   justificativa: string
   alteracao: DetalheAlteracao
+  chamado_pai_id: string | null
 }
 
 const idValido = (v: string | null | undefined): v is string => !!v && /^\d{1,18}$/.test(v)
@@ -168,7 +171,7 @@ async function registrarEvento(
 async function travarMovimentacao(client: pg.PoolClient, usuario: UsuarioAutenticado, id: string): Promise<MovRow> {
   if (!idValido(id)) throw naoEncontrado('Movimentação não encontrada.')
   const { rows } = await client.query<MovRow>(
-    `select id, protocolo, colaborador_id, planta_id, tipo, status, etapa_atual, vigencia, justificativa, alteracao
+    `select id, protocolo, colaborador_id, planta_id, tipo, status, etapa_atual, vigencia, justificativa, alteracao, chamado_pai_id
        from movimentacoes where id = $1 for update`,
     [id],
   )
@@ -221,11 +224,28 @@ export async function recursoCanonico(q: Queryable, usuario: UsuarioAutenticado,
 
 // ---------- Criar / editar rascunho ----------
 
+/**
+ * Normaliza uma referência de chamado para a raiz real (coalesce(chamado_pai_id, id)) e valida que
+ * pertence ao mesmo colaborador — mantém a unidade do chamado (aba ALTERAÇÃO DE CC/AREA DE ATUAÇÃO:
+ * "possibilidade de lançar mais que uma movimentação em um chamado").
+ */
+async function resolverChamadoPaiId(client: pg.PoolClient, usuario: UsuarioAutenticado, chamadoPaiId: string | null | undefined, colaboradorId: string): Promise<string | null> {
+  if (!idValido(chamadoPaiId)) return null
+  const referencia = await travarMovimentacao(client, usuario, chamadoPaiId)
+  const raizId = referencia.chamado_pai_id ?? referencia.id
+  const raiz = raizId === referencia.id ? referencia : await travarMovimentacao(client, usuario, raizId)
+  if (raiz.colaborador_id !== colaboradorId) {
+    throw regraDeNegocio('CHAMADO_COLABORADOR_DIVERGENTE', 'Este chamado pertence a outro colaborador.', { chamadoPaiId: 'Este chamado pertence a outro colaborador.' })
+  }
+  return raiz.id
+}
+
 export async function criarRascunho(pool: pg.Pool, usuario: UsuarioAutenticado, corpo: CorpoMovimentacao): Promise<{ id: string; protocolo: string }> {
   exigirEscrita(usuario)
   return withTransaction(pool, async (client) => {
     const colaborador = await carregarColaboradorCtx(client, corpo.colaboradorId)
     if (!colaborador || !temAcessoAPlanta(usuario, colaborador.plantaId)) throw naoEncontrado('Colaborador não encontrado.')
+    const chamadoPaiId = await resolverChamadoPaiId(client, usuario, corpo.chamadoPaiId, colaborador.id)
 
     const alteracao = montarAlteracao(normalizarProposta(corpo.tipo, corpo.alteracao), colaborador)
     const vigencia = vigenciaValida(corpo.vigencia) ? corpo.vigencia! : null
@@ -238,13 +258,19 @@ export async function criarRascunho(pool: pg.Pool, usuario: UsuarioAutenticado, 
     // é recalculado por etapaInicial() em enviarParaAprovacao, sempre a partir do estado atual.
     const { rows } = await client.query<{ id: string; protocolo: string }>(
       `insert into movimentacoes (colaborador_id, planta_id, solicitante_id, solicitante_nome, tipo, vigencia,
-                                  etapa_atual, status, alteracao, justificativa, checagens, potencial)
-       values ($1, $2, $3, $4, $5, $6, 'gestor', 'rascunho', $7, $8, $9, $10)
+                                  etapa_atual, status, alteracao, justificativa, checagens, potencial, chamado_pai_id)
+       values ($1, $2, $3, $4, $5, $6, 'gestor', 'rascunho', $7, $8, $9, $10, $11)
        returning id, protocolo`,
-      [colaborador.id, colaborador.plantaId, usuario.id, usuario.nome, corpo.tipo, vigencia, JSON.stringify(alteracao), justificativa, JSON.stringify(checagens), potencial],
+      [colaborador.id, colaborador.plantaId, usuario.id, usuario.nome, corpo.tipo, vigencia, JSON.stringify(alteracao), justificativa, JSON.stringify(checagens), potencial, chamadoPaiId],
     )
     const mov = rows[0]!
-    await registrarEvento(client, mov.id, 'abertura', usuario, `Rascunho ${mov.protocolo} criado.`)
+    await registrarEvento(
+      client,
+      mov.id,
+      'abertura',
+      usuario,
+      chamadoPaiId ? `Rascunho ${mov.protocolo} criado como nova alteração do chamado.` : `Rascunho ${mov.protocolo} criado.`,
+    )
     return { id: mov.id, protocolo: mov.protocolo }
   })
 }
@@ -435,6 +461,27 @@ export async function decidirEtapa(
       await registrarEvento(client, mov.id, 'conclusao', null, 'Solicitação aprovada — pronta para processamento.')
     }
     return { protocolo: mov.protocolo, decisao: corpo.decisao }
+  })
+}
+
+// ---------- Cancelamento ----------
+
+const STATUS_CANCELAVEIS: StatusMovimentacao[] = ['rascunho', 'em_andamento', 'devolvida', 'reprovada']
+
+/**
+ * Cancela uma alteração (aba ALTERAÇÃO AREA DE ATUAÇÃO: chamados com mais de uma alteração podem
+ * cancelar uma delas sem afetar as demais). Não altera outras alterações do mesmo chamado.
+ */
+export async function cancelarMovimentacao(pool: pg.Pool, usuario: UsuarioAutenticado, id: string): Promise<{ protocolo: string }> {
+  exigirEscrita(usuario)
+  return withTransaction(pool, async (client) => {
+    const mov = await travarMovimentacao(client, usuario, id)
+    if (!STATUS_CANCELAVEIS.includes(mov.status)) {
+      throw conflito('Somente rascunhos, solicitações em andamento, devolvidas ou reprovadas podem ser canceladas.', 'MOVIMENTACAO_NAO_CANCELAVEL')
+    }
+    await client.query(`update movimentacoes set status = 'cancelada', updated_at = now() where id = $1`, [mov.id])
+    await registrarEvento(client, mov.id, 'cancelamento', usuario, `${usuario.nome} cancelou a solicitação.`)
+    return { protocolo: mov.protocolo }
   })
 }
 

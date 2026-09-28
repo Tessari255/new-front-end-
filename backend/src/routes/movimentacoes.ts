@@ -8,6 +8,7 @@ import { comLog } from '../services/logs.ts'
 import {
   anexarDocumento,
   atualizarRascunho,
+  cancelarMovimentacao,
   criarRascunho,
   decidirEtapa,
   enviarParaAprovacao,
@@ -91,6 +92,21 @@ export function rotasMovimentacoes(app: FastifyInstance, pool: pg.Pool) {
       return { ...(await recursoCanonico(pool, usuario, id)), logs: log ? [log] : [] }
     },
   )
+
+  app.post<{ Params: ParamsId }>('/movimentacoes/:id/cancelar', { schema: schemaRecurso }, async (request) => {
+    const usuario = exigirUsuario(request)
+    const { id } = request.params
+    const { log } = await comLog(
+      pool,
+      request,
+      usuario,
+      'movimentacao',
+      'Cancelar movimentação',
+      () => cancelarMovimentacao(pool, usuario, id),
+      (r) => `${r.protocolo} cancelada.`,
+    )
+    return { ...(await recursoCanonico(pool, usuario, id)), logs: log ? [log] : [] }
+  })
 
   app.post<{ Params: ParamsId }>(
     '/movimentacoes/:id/documentos',

@@ -69,7 +69,7 @@ export function calcularIndicadores(
 }
 
 export function distribuicaoPorStatus(movimentacoes: Movimentacao[]): Record<StatusMovimentacao, number> {
-  const base: Record<StatusMovimentacao, number> = { rascunho: 0, em_andamento: 0, devolvida: 0, reprovada: 0, aprovada: 0 }
+  const base: Record<StatusMovimentacao, number> = { rascunho: 0, em_andamento: 0, devolvida: 0, reprovada: 0, aprovada: 0, cancelada: 0 }
   for (const m of movimentacoes) base[m.status] += 1
   return base
 }

@@ -39,6 +39,8 @@ export function rotuloStatusMovimentacao(status: StatusMovimentacao): string {
       return 'Reprovada'
     case 'aprovada':
       return 'Aprovada'
+    case 'cancelada':
+      return 'Cancelada'
   }
 }
 
@@ -54,6 +56,8 @@ export function tomStatusMovimentacao(status: StatusMovimentacao): Tom {
       return 'danger'
     case 'aprovada':
       return 'success'
+    case 'cancelada':
+      return 'neutral'
   }
 }
 

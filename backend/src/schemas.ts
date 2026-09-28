@@ -51,6 +51,7 @@ export const bodyMovimentacao = {
     justificativa: { type: ['string', 'null'], maxLength: 5000 },
     alteracao: alteracaoProposta,
     potencial: { type: ['string', 'null'], enum: ['baixo', 'estavel', 'alto', null] },
+    chamadoPaiId: idOpcional,
   },
 } as const
 
@@ -145,12 +146,14 @@ export const movimentacao = obj(
     documentosIds: arr(str),
     checagens: arr(checagem),
     decisoes: arr(decisao),
+    chamadoId: str,
+    chamadoPaiId: strNull,
     rhLiberadaFolhaEm: str,
     arquivosGerados: obj({ apdataGeradoEm: str, employeeCentralGeradoEm: str }, []),
   },
   [
     'id', 'protocolo', 'colaboradorId', 'tipo', 'plantaId', 'solicitanteNome', 'dataAbertura', 'vigencia', 'etapaAtual',
-    'status', 'alteracao', 'justificativa', 'potencial', 'documentosIds', 'checagens', 'decisoes', 'arquivosGerados',
+    'status', 'alteracao', 'justificativa', 'potencial', 'documentosIds', 'checagens', 'decisoes', 'chamadoId', 'arquivosGerados',
   ],
 )
 export const documento = obj(

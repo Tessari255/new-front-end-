@@ -1,6 +1,6 @@
 import * as React from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Search, X, Plus, ArrowLeftRight } from 'lucide-react'
+import { Search, X, Plus, ArrowLeftRight, Layers } from 'lucide-react'
 import { useAppStore } from '@/store/useAppStore'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Input, Label } from '@/components/ui/Input'
@@ -38,6 +38,11 @@ export default function MovimentacoesListPage() {
   const pagina = Math.max(1, parseInt(paginaStr, 10) || 1)
 
   const movimentacoesDaPlanta = React.useMemo(() => filtrarPorPlanta(movimentacoesTodas, plantaSelecionadaId), [movimentacoesTodas, plantaSelecionadaId])
+  const contagemPorChamado = React.useMemo(() => {
+    const mapa = new Map<string, number>()
+    for (const m of movimentacoesDaPlanta) mapa.set(m.chamadoId, (mapa.get(m.chamadoId) ?? 0) + 1)
+    return mapa
+  }, [movimentacoesDaPlanta])
   const criadoresDisponiveis = React.useMemo(
     () => [...new Set(movimentacoesDaPlanta.map((m) => m.solicitanteNome))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
     [movimentacoesDaPlanta],
@@ -133,6 +138,7 @@ export default function MovimentacoesListPage() {
                 <SelectItem value="devolvida">Devolvida</SelectItem>
                 <SelectItem value="reprovada">Reprovada</SelectItem>
                 <SelectItem value="aprovada">Aprovada</SelectItem>
+                <SelectItem value="cancelada">Cancelada</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -236,7 +242,17 @@ export default function MovimentacoesListPage() {
                 const planta = plantas.find((p) => p.id === mov.plantaId)
                 return (
                   <TableRow key={mov.id} clickable onClick={() => navigate(`/movimentacoes/${mov.id}`)}>
-                    <TableCell className="whitespace-nowrap font-mono text-[13px] text-[var(--color-ink-muted)]">{mov.protocolo}</TableCell>
+                    <TableCell className="whitespace-nowrap font-mono text-[13px] text-[var(--color-ink-muted)]">
+                      <span className="inline-flex items-center gap-1.5">
+                        {mov.protocolo}
+                        {(contagemPorChamado.get(mov.chamadoId) ?? 1) > 1 && (
+                          <span title="Este chamado tem mais de uma alteração" className="inline-flex items-center gap-0.5 rounded-full bg-[var(--color-bg)] px-1.5 py-0.5 text-[11px] text-[var(--color-ink-muted)]">
+                            <Layers className="size-3" aria-hidden="true" />
+                            {contagemPorChamado.get(mov.chamadoId)}
+                          </span>
+                        )}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <Avatar nome={colaborador?.nome ?? '—'} size="sm" />

@@ -12,6 +12,8 @@ export interface NovaMovimentacaoInput {
   justificativa: string
   alteracao: DetalheAlteracao
   potencial?: Potencial | null
+  /** Id da raiz de um chamado existente, para registrar esta como mais uma alteração dele. */
+  chamadoPaiId?: string | null
   /** Arquivos reais (File) enviados via multipart após a criação/atualização do rascunho. */
   arquivos: File[]
   comoRascunho: boolean
@@ -56,6 +58,7 @@ function corpo(input: Omit<NovaMovimentacaoInput, 'arquivos' | 'comoRascunho'>) 
     justificativa: input.justificativa,
     alteracao: proposta(input.alteracao),
     potencial: input.potencial ?? null,
+    chamadoPaiId: input.chamadoPaiId ?? null,
   }
 }
 
@@ -110,6 +113,10 @@ export async function enviarParaAprovacao(id: string): Promise<void> {
 
 export async function decidirEtapa(id: string, decisao: 'aprovado' | 'devolvido' | 'reprovado', comentario?: string): Promise<void> {
   mesclar(await mutar(() => apiJson<RecursoMovimentacao>(`/movimentacoes/${id}/decisoes`, { method: 'POST', json: { decisao, comentario: comentario ?? null } })))
+}
+
+export async function cancelarMovimentacao(id: string): Promise<void> {
+  mesclar(await mutar(() => apiJson<RecursoMovimentacao>(`/movimentacoes/${id}/cancelar`, { method: 'POST' })))
 }
 
 export async function adicionarDocumento(movimentacaoId: string, arquivo: File, tipo: Documento['tipo'] = 'evidencia'): Promise<void> {

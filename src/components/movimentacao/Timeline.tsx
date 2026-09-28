@@ -1,4 +1,4 @@
-import { FilePlus2, FileCheck2, ThumbsUp, RotateCcw, ThumbsDown, FlagOff, Download, PenLine, ClipboardCheck } from 'lucide-react'
+import { FilePlus2, FileCheck2, ThumbsUp, RotateCcw, ThumbsDown, FlagOff, Download, PenLine, ClipboardCheck, Ban } from 'lucide-react'
 import type { EventoHistorico } from '@/types'
 import { formatDateTime } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -13,6 +13,7 @@ const ICONES: Record<EventoHistorico['tipo'], typeof FilePlus2> = {
   reprovacao: ThumbsDown,
   conclusao: FlagOff,
   geracao_arquivo: Download,
+  cancelamento: Ban,
 }
 
 const CORES: Record<EventoHistorico['tipo'], string> = {
@@ -25,6 +26,7 @@ const CORES: Record<EventoHistorico['tipo'], string> = {
   reprovacao: 'bg-[var(--color-danger-soft)] text-[var(--color-danger)]',
   conclusao: 'bg-[var(--color-accent-soft)] text-[var(--color-accent-hover)]',
   geracao_arquivo: 'bg-violet-50 text-violet-600',
+  cancelamento: 'bg-slate-100 text-[var(--color-ink-muted)]',
 }
 
 export function Timeline({ eventos }: { eventos: EventoHistorico[] }) {
