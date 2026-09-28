@@ -74,6 +74,7 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
           centro_custo_id: ccId.get(c.centroCustoKey), horario_id: horarioId.get(c.horarioKey), folha_id: folhaId.get(c.folhaKey),
           gestor_id: c.gestorKey ? colabId.get(c.gestorKey) : null, is_gestor: c.isGestor, salario: c.salario,
           apdata_id: c.apdataId, employee_central_id: c.employeeCentralId, status_sincronizacao: c.statusSincronizacao,
+          tipo_mao_de_obra: c.tipoMaoDeObra ?? null,
         }),
       )
     }
@@ -114,6 +115,20 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
             centroCustoAtualId: ccId.get(a.centroCustoAtualId)!, centroCustoPropostoId: ccId.get(a.centroCustoPropostoId)!,
             plantaAtualId: plantaId.get(a.plantaAtualId)!, plantaPropostaId: plantaId.get(a.plantaPropostaId)!,
           }
+        case 'merito':
+          return a
+        case 'transferencia_localidade':
+          return {
+            ...a,
+            plantaAtualId: plantaId.get(a.plantaAtualId)!, plantaPropostaId: plantaId.get(a.plantaPropostaId)!,
+            centroCustoAtualId: ccId.get(a.centroCustoAtualId)!, centroCustoPropostoId: ccId.get(a.centroCustoPropostoId)!,
+            gestorAtualId: a.gestorAtualId ? colabId.get(a.gestorAtualId)! : null,
+            gestorPropostoId: a.gestorPropostoId ? colabId.get(a.gestorPropostoId)! : null,
+          }
+        case 'alteracao_mao_de_obra':
+          return a
+        case 'alteracao_area_atuacao':
+          return { ...a, areaAtualId: areaId.get(a.areaAtualId)!, areaPropostaId: areaId.get(a.areaPropostaId)! }
       }
     }
 
@@ -123,11 +138,11 @@ export async function semearDemo(pool: pg.Pool): Promise<ResumoSeed> {
         const abertura = m.eventos[0]!.data
         const { rows } = await q.query(
           `insert into movimentacoes (colaborador_id, planta_id, solicitante_nome, tipo, data_abertura, vigencia, etapa_atual, status,
-                                      alteracao, justificativa, checagens, apdata_gerado_em, employee_central_gerado_em, created_at, updated_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $14) returning id`,
+                                      alteracao, justificativa, checagens, potencial, apdata_gerado_em, employee_central_gerado_em, created_at, updated_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15) returning id`,
           [
             colabId.get(m.colaboradorKey), plantaId.get(m.plantaKey), m.solicitanteNome, m.tipo, m.dataAbertura, m.vigencia, m.etapaAtual,
-            m.status, JSON.stringify(traduzir(m.alteracao)), m.justificativa, JSON.stringify(m.checagens),
+            m.status, JSON.stringify(traduzir(m.alteracao)), m.justificativa, JSON.stringify(m.checagens), m.potencial ?? null,
             m.apdataGeradoEm ?? null, m.employeeCentralGeradoEm ?? null, abertura,
           ],
         )

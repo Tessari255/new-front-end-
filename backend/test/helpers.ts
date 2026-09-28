@@ -134,7 +134,13 @@ export async function idPorNome(ctx: Ctx, tabela: 'cargos' | 'centros_custo' | '
   return rows[0].id as string
 }
 
-/** Cria e envia uma mudança de gestor válida (Bianca → Mariana) como Yasmin; devolve a movimentação. */
+/**
+ * Cria e envia uma mudança de gestor válida (Bianca → Mariana) como Yasmin (gestora direta de
+ * Bianca); devolve a movimentação. Pela regra "gestor que cria o workflow não precisa aprovar",
+ * o envio pula a etapa `gestor` e já sai em `rh_local` — use este helper para testar exatamente
+ * esse comportamento. Para testar a decisão na etapa `gestor`, use
+ * `criarMudancaGestorEnviadaPorRH`, que preserva essa etapa pendente.
+ */
 export async function criarMudancaGestorEnviada(ctx: Ctx) {
   const bianca = await colaboradorPorNome(ctx, 'Bianca Ferreira Aguiar')
   const mariana = await colaboradorPorNome(ctx, 'Mariana Oliveira Castro')
@@ -148,6 +154,28 @@ export async function criarMudancaGestorEnviada(ctx: Ctx) {
   if (criada.statusCode !== 201) throw new Error(`criação falhou: ${criada.body}`)
   const id = json(criada).movimentacao.id as string
   const enviada = await chamar(ctx, USUARIOS.yasmin, 'POST', `/movimentacoes/${id}/enviar`)
+  if (enviada.statusCode !== 200) throw new Error(`envio falhou: ${enviada.body}`)
+  return json(enviada).movimentacao as { id: string; protocolo: string; status: string; etapaAtual: string }
+}
+
+/**
+ * Mesmo cenário (Bianca → Mariana), mas criado e enviado pelo RH Local de Joinville em nome de
+ * Bianca — não pelo gestor direto. A etapa `gestor` continua pendente, exigindo decisão de
+ * Yasmin; use este helper para testar a etapa `gestor` (permissões, concorrência, devolução…).
+ */
+export async function criarMudancaGestorEnviadaPorRH(ctx: Ctx) {
+  const bianca = await colaboradorPorNome(ctx, 'Bianca Ferreira Aguiar')
+  const mariana = await colaboradorPorNome(ctx, 'Mariana Oliveira Castro')
+  const criada = await chamar(ctx, USUARIOS.rhLocalJoi, 'POST', '/movimentacoes', {
+    colaboradorId: bianca,
+    tipo: 'mudanca_gestor',
+    vigencia: '2026-10-01',
+    justificativa: 'Reestruturação da coordenação de Qualidade, reporte direto à gerência.',
+    alteracao: { tipo: 'mudanca_gestor', gestorPropostoId: mariana },
+  })
+  if (criada.statusCode !== 201) throw new Error(`criação falhou: ${criada.body}`)
+  const id = json(criada).movimentacao.id as string
+  const enviada = await chamar(ctx, USUARIOS.rhLocalJoi, 'POST', `/movimentacoes/${id}/enviar`)
   if (enviada.statusCode !== 200) throw new Error(`envio falhou: ${enviada.body}`)
   return json(enviada).movimentacao as { id: string; protocolo: string; status: string; etapaAtual: string }
 }

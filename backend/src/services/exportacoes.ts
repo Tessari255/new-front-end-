@@ -22,7 +22,13 @@ export const ROTULO_TIPO: Record<TipoMovimentacao, string> = {
   promocao: 'Promoção',
   enquadramento: 'Enquadramento',
   transferencia_cc: 'Transferência de centro de custo',
+  merito: 'Mérito',
+  transferencia_localidade: 'Transferência de localidade',
+  alteracao_mao_de_obra: 'Alteração de mão de obra',
+  alteracao_area_atuacao: 'Alteração de área de atuação',
 }
+
+const ROTULO_MAO_DE_OBRA: Record<'direta' | 'indireta', string> = { direta: 'Mão de obra direta', indireta: 'Mão de obra indireta' }
 
 interface CampoComparado {
   label: string
@@ -30,7 +36,7 @@ interface CampoComparado {
   depois: string
 }
 
-async function nome(q: Queryable, tabela: 'colaboradores' | 'cargos' | 'centros_custo' | 'folhas' | 'horarios' | 'plantas', id: string | null) {
+async function nome(q: Queryable, tabela: 'colaboradores' | 'cargos' | 'centros_custo' | 'folhas' | 'horarios' | 'plantas' | 'areas', id: string | null) {
   if (!id || !/^\d{1,18}$/.test(id)) return null
   const { rows } = await q.query(`select nome from ${tabela} where id = $1`, [id])
   return (rows[0]?.nome as string | undefined) ?? null
@@ -95,6 +101,46 @@ async function compararAlteracao(q: Queryable, a: DetalheAlteracao): Promise<Cam
       }
       return campos
     }
+    case 'merito':
+      return [{ label: 'Salário', antes: moeda(a.salarioAtual), depois: moeda(a.salarioProposto) }]
+    case 'transferencia_localidade': {
+      const campos: CampoComparado[] = [
+        {
+          label: 'Localidade',
+          antes: (await nome(q, 'plantas', a.plantaAtualId)) ?? '—',
+          depois: (await nome(q, 'plantas', a.plantaPropostaId)) ?? '—',
+        },
+        {
+          label: 'Centro de custo',
+          antes: (await nome(q, 'centros_custo', a.centroCustoAtualId)) ?? '—',
+          depois: (await nome(q, 'centros_custo', a.centroCustoPropostoId)) ?? '—',
+        },
+      ]
+      if (a.gestorPropostoId && a.gestorPropostoId !== a.gestorAtualId) {
+        campos.push({
+          label: 'Gestor',
+          antes: (await nome(q, 'colaboradores', a.gestorAtualId)) ?? 'Sem gestor definido',
+          depois: (await nome(q, 'colaboradores', a.gestorPropostoId)) ?? '—',
+        })
+      }
+      return campos
+    }
+    case 'alteracao_mao_de_obra':
+      return [
+        {
+          label: 'Tipo de mão de obra',
+          antes: a.tipoMaoDeObraAtual ? ROTULO_MAO_DE_OBRA[a.tipoMaoDeObraAtual] : 'Não definido',
+          depois: ROTULO_MAO_DE_OBRA[a.tipoMaoDeObraProposto],
+        },
+      ]
+    case 'alteracao_area_atuacao':
+      return [
+        {
+          label: 'Área de atuação',
+          antes: (await nome(q, 'areas', a.areaAtualId)) ?? '—',
+          depois: (await nome(q, 'areas', a.areaPropostaId)) ?? '—',
+        },
+      ]
   }
 }
 

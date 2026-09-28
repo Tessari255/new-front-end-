@@ -11,6 +11,8 @@ import { DefinitionList } from '@/components/ui/DefinitionList'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/Dialog'
 import { FileDropzone, type ArquivoSelecionado } from '@/components/ui/FileDropzone'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select'
+import { Label } from '@/components/ui/Input'
 import { useToast } from '@/components/ui/Toast'
 import { ComparacaoCampos } from '@/components/movimentacao/ComparacaoCampos'
 import { ChecagensList } from '@/components/movimentacao/ChecagensList'
@@ -18,12 +20,16 @@ import { FluxoAprovacaoVisual } from '@/components/movimentacao/FluxoAprovacaoVi
 import { GerarArquivosCard } from '@/components/movimentacao/GerarArquivosCard'
 import { AcoesAprovacaoCard } from '@/components/movimentacao/AcoesAprovacaoCard'
 import { Timeline } from '@/components/movimentacao/Timeline'
-import { compararAlteracao } from '@/lib/movimentacao'
+import { compararAlteracao, ipeDoCargoNaPlanta } from '@/lib/movimentacao'
 import { usuarioPodeDecidir } from '@/lib/selectors'
-import { rotuloStatusMovimentacao, rotuloTipoDocumento, rotuloTipoMovimentacao, tomStatusMovimentacao } from '@/lib/rotulos'
+import { rotuloIpe, rotuloPotencial, rotuloStatusMovimentacao, rotuloTipoDocumento, rotuloTipoMovimentacao, tomStatusMovimentacao } from '@/lib/rotulos'
 import { formatBytes, formatDate, formatDateTime } from '@/lib/format'
+import { tempoDeCasa } from '@/lib/tempoDeCasa'
 import { NOTA_REGRAS_DEMO } from '@/data/rules'
+import type { Documento } from '@/types'
 import { adicionarDocumento, baixarDocumento, enviarParaAprovacao } from '@/services/movimentacoesService'
+
+const TIPOS_DOCUMENTO_SELECIONAVEIS: Documento['tipo'][] = ['evidencia', 'documento_aprovado', 'offer_letter', 'c_req', 'e_req', 'carta_promocao', 'carta_merito']
 
 export default function MovimentacaoDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -33,6 +39,9 @@ export default function MovimentacaoDetailPage() {
   const movimentacoes = useAppStore((s) => s.movimentacoes)
   const colaboradores = useAppStore((s) => s.colaboradores)
   const plantas = useAppStore((s) => s.plantas)
+  const cargos = useAppStore((s) => s.cargos)
+  const areas = useAppStore((s) => s.areas)
+  const centrosCusto = useAppStore((s) => s.centrosCusto)
   const documentosTodos = useAppStore((s) => s.documentos)
   const historicoTodo = useAppStore((s) => s.historico)
   const currentUser = useAppStore((s) => s.currentUser)
@@ -42,6 +51,11 @@ export default function MovimentacaoDetailPage() {
   const [dialogAberto, setDialogAberto] = React.useState(false)
   const [arquivosNovos, setArquivosNovos] = React.useState<ArquivoSelecionado[]>([])
   const [salvandoDocs, setSalvandoDocs] = React.useState(false)
+  const [tipoDocumentoNovo, setTipoDocumentoNovo] = React.useState<Documento['tipo']>(
+    mov && (mov.tipo === 'promocao' || mov.tipo === 'alteracao_cargo') ? 'carta_promocao'
+    : mov && (mov.tipo === 'merito' || mov.tipo === 'enquadramento') ? 'carta_merito'
+    : 'evidencia',
+  )
 
   if (!mov) {
     return (
@@ -61,16 +75,24 @@ export default function MovimentacaoDetailPage() {
 
   const colaborador = colaboradores.find((c) => c.id === mov.colaboradorId)
   const planta = plantas.find((p) => p.id === mov.plantaId)
-  const campos = compararAlteracao(mov.alteracao, colaboradores)
+  const campos = compararAlteracao(mov.alteracao, colaboradores, colaborador?.plantaId)
   const documentos = documentosTodos.filter((d) => d.movimentacaoId === mov.id)
   const eventos = historicoTodo.filter((e) => e.movimentacaoId === mov.id)
+
+  const cargoAtual = colaborador ? cargos.find((c) => c.id === colaborador.cargoId) : undefined
+  const areaAtual = colaborador ? areas.find((a) => a.id === colaborador.areaId) : undefined
+  const ccAtual = colaborador ? centrosCusto.find((c) => c.id === colaborador.centroCustoId) : undefined
+  const gestorAtual = colaborador ? colaboradores.find((c) => c.id === colaborador.gestorId) : undefined
+  const ipeAtual = colaborador ? ipeDoCargoNaPlanta(colaborador.cargoId, colaborador.plantaId) : null
 
   async function reenviar() {
     if (!mov) return
     setEnviando(true)
     try {
       await enviarParaAprovacao(mov.id)
-      notificar({ tipo: 'sucesso', titulo: 'Solicitação enviada', descricao: `${mov.protocolo} encaminhada para aprovação do gestor.` })
+      const atualizada = useAppStore.getState().movimentacoes.find((m) => m.id === mov.id)
+      const etapaDescricao = atualizada?.etapaAtual === 'rh_local' ? 'aprovação do RH Local' : atualizada?.etapaAtual === 'rh_central' ? 'aprovação do RH Central' : 'aprovação do gestor'
+      notificar({ tipo: 'sucesso', titulo: 'Solicitação enviada', descricao: `${mov.protocolo} encaminhada para ${etapaDescricao}.` })
     } catch (erro) {
       notificarErro(erro, 'A solicitação não foi enviada')
     } finally {
@@ -84,7 +106,7 @@ export default function MovimentacaoDetailPage() {
     const pendentes = [...arquivosNovos]
     try {
       for (const arquivo of arquivosNovos) {
-        await adicionarDocumento(mov.id, arquivo.file)
+        await adicionarDocumento(mov.id, arquivo.file, tipoDocumentoNovo)
         pendentes.shift()
       }
       notificar({ tipo: 'sucesso', titulo: 'Documento(s) anexado(s)', descricao: `${arquivosNovos.length} arquivo(s) adicionado(s) a ${mov.protocolo}.` })
@@ -159,6 +181,29 @@ export default function MovimentacaoDetailPage() {
             </CardContent>
           </Card>
 
+          {colaborador && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Colaborador no momento da solicitação</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <DefinitionList
+                  columns={2}
+                  items={[
+                    { label: 'Cargo atual', value: cargoAtual?.nome ?? '—' },
+                    { label: 'IPE atual', value: rotuloIpe(ipeAtual) },
+                    { label: 'Potencial', value: rotuloPotencial(mov.potencial) },
+                    { label: 'Data de admissão', value: formatDate(colaborador.dataAdmissao) },
+                    { label: 'Tempo de empresa', value: tempoDeCasa(colaborador.dataAdmissao) },
+                    { label: 'Área de atuação', value: areaAtual?.nome ?? '—' },
+                    { label: 'Centro de custo', value: ccAtual ? `${ccAtual.codigo} · ${ccAtual.nome}` : '—' },
+                    { label: 'Gestor atual', value: gestorAtual?.nome ?? 'Sem gestor definido' },
+                  ]}
+                />
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Justificativa</CardTitle>
@@ -185,6 +230,24 @@ export default function MovimentacaoDetailPage() {
                     <DialogTitle>Anexar documento</DialogTitle>
                     <DialogDescription>Adicione evidências ou documentos relacionados a {mov.protocolo}.</DialogDescription>
                   </DialogHeader>
+                  <div>
+                    <Label htmlFor="select-tipo-documento">Tipo de documento</Label>
+                    <Select value={tipoDocumentoNovo} onValueChange={(v) => setTipoDocumentoNovo(v as Documento['tipo'])}>
+                      <SelectTrigger id="select-tipo-documento">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {TIPOS_DOCUMENTO_SELECIONAVEIS.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {rotuloTipoDocumento(t)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                      Cartas de promoção/mérito são anexos enviados por você — não há geração automática (sem modelo oficial definido).
+                    </p>
+                  </div>
                   <FileDropzone
                     arquivos={arquivosNovos}
                     onAdicionar={(novos) => setArquivosNovos((atual) => [...atual, ...novos])}

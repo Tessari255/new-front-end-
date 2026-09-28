@@ -113,6 +113,7 @@ interface ColaboradorRow {
   salario_base: number | null
   faixa_atual_percentual: number | null
   ipe: number | null
+  tipo_mao_de_obra: string | null
   apdata_id: string
   employee_central_id: string
   status_sincronizacao: StatusSincronizacao
@@ -139,6 +140,7 @@ export function mapColaborador(r: ColaboradorRow) {
     salarioBaseCargo: r.salario_base,
     faixaAtualPercentual: r.faixa_atual_percentual,
     ipe: r.ipe,
+    tipoMaoDeObra: r.tipo_mao_de_obra,
     externos: {
       apdataId: r.apdata_id,
       employeeCentralId: r.employee_central_id,
@@ -149,6 +151,7 @@ export function mapColaborador(r: ColaboradorRow) {
 
 const COLUNAS_COLABORADOR = `co.id, co.matricula, co.nome, co.email, co.telefone, co.data_admissao, co.status, co.cargo_id, co.area_id, co.planta_id,
   co.centro_custo_id, co.horario_id, co.folha_id, co.gestor_id, co.is_gestor, co.salario, co.apdata_id, co.employee_central_id, co.status_sincronizacao,
+  co.tipo_mao_de_obra,
   cp.salario_base, cp.ipe,
   case when cp.salario_base > 0 then round((co.salario / cp.salario_base) * 100, 2) end as faixa_atual_percentual`
 
@@ -189,6 +192,7 @@ interface MovimentacaoRow {
   status: StatusMovimentacao
   alteracao: DetalheAlteracao
   justificativa: string
+  potencial: string | null
   checagens: ChecagemRegra[]
   apdata_gerado_em: Date | null
   employee_central_gerado_em: Date | null
@@ -207,7 +211,7 @@ interface DecisaoRow {
 export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: string[] | null = null) {
   const movs = await q.query<MovimentacaoRow>(
     `select id, protocolo, colaborador_id, planta_id, solicitante_nome, tipo, data_abertura, vigencia, etapa_atual,
-            status, alteracao, justificativa, checagens, apdata_gerado_em, employee_central_gerado_em
+            status, alteracao, justificativa, potencial, checagens, apdata_gerado_em, employee_central_gerado_em
        from movimentacoes
       where ($1::bigint[] is null or planta_id = any($1::bigint[]))
         and ($2::bigint[] is null or id = any($2::bigint[]))
@@ -251,6 +255,7 @@ export async function listarMovimentacoes(q: Queryable, escopo: Escopo, ids: str
     status: m.status,
     alteracao: m.alteracao,
     justificativa: m.justificativa,
+    potencial: m.potencial,
     documentosIds: docsPorMov.get(m.id) ?? [],
     checagens: m.checagens,
     decisoes: (decisoesPorMov.get(m.id) ?? []).map((d) => ({

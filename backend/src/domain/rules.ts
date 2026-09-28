@@ -4,10 +4,11 @@ import type {
   ChecagemRegra,
   DetalheAlteracao,
   PropostaAlteracao,
+  TipoMaoDeObra,
   TipoMovimentacao,
 } from '../types.ts'
 
-export const TIPOS_COM_EVIDENCIA_OBRIGATORIA: TipoMovimentacao[] = ['alteracao_salarial', 'promocao', 'enquadramento']
+export const TIPOS_COM_EVIDENCIA_OBRIGATORIA: TipoMovimentacao[] = ['alteracao_salarial', 'promocao', 'enquadramento', 'merito']
 
 export function evidenciaObrigatoria(tipo: TipoMovimentacao): boolean {
   return TIPOS_COM_EVIDENCIA_OBRIGATORIA.includes(tipo)
@@ -23,11 +24,13 @@ export interface ColaboradorCtx {
   status: 'ativo' | 'afastado' | 'inativo'
   plantaId: string
   cargoId: string
+  areaId: string
   centroCustoId: string
   folhaId: string
   horarioId: string
   gestorId: string | null
   salario: number
+  tipoMaoDeObra: TipoMaoDeObra | null
 }
 
 export interface CargoCtx {
@@ -46,6 +49,8 @@ export interface ContextoAvaliacao {
   centroCustoProposto: { id: string; plantaId: string } | null
   folhaPropostaExiste: boolean
   horarioPropostoExiste: boolean
+  plantaPropostaExiste: boolean
+  areaPropostaExiste: boolean
   temEvidencia: boolean
 }
 
@@ -87,6 +92,26 @@ export function montarAlteracao(p: PropostaAlteracao, c: ColaboradorCtx): Detalh
         plantaAtualId: c.plantaId,
         plantaPropostaId: c.plantaId,
       }
+    case 'merito':
+      return { tipo: 'merito', salarioAtual: c.salario, salarioProposto: p.salarioProposto ?? c.salario }
+    case 'transferencia_localidade':
+      return {
+        tipo: 'transferencia_localidade',
+        plantaAtualId: c.plantaId,
+        plantaPropostaId: p.plantaPropostaId ?? c.plantaId,
+        centroCustoAtualId: c.centroCustoId,
+        centroCustoPropostoId: p.centroCustoPropostoId ?? c.centroCustoId,
+        gestorAtualId: c.gestorId,
+        gestorPropostoId: p.gestorPropostoId ?? null,
+      }
+    case 'alteracao_mao_de_obra':
+      return {
+        tipo: 'alteracao_mao_de_obra',
+        tipoMaoDeObraAtual: c.tipoMaoDeObra,
+        tipoMaoDeObraProposto: p.tipoMaoDeObraProposto ?? c.tipoMaoDeObra ?? 'direta',
+      }
+    case 'alteracao_area_atuacao':
+      return { tipo: 'alteracao_area_atuacao', areaAtualId: c.areaId, areaPropostaId: p.areaPropostaId ?? c.areaId }
   }
 }
 
@@ -105,17 +130,32 @@ export function propostaDeAlteracao(a: DetalheAlteracao): PropostaAlteracao {
       return { tipo: a.tipo, folhaPropostaId: a.folhaPropostaId, horarioPropostoId: a.horarioPropostoId }
     case 'transferencia_cc':
       return { tipo: a.tipo, centroCustoPropostoId: a.centroCustoPropostoId }
+    case 'merito':
+      return { tipo: a.tipo, salarioProposto: a.salarioProposto }
+    case 'transferencia_localidade':
+      return {
+        tipo: a.tipo,
+        plantaPropostaId: a.plantaPropostaId,
+        centroCustoPropostoId: a.centroCustoPropostoId,
+        gestorPropostoId: a.gestorPropostoId,
+      }
+    case 'alteracao_mao_de_obra':
+      return { tipo: a.tipo, tipoMaoDeObraProposto: a.tipoMaoDeObraProposto }
+    case 'alteracao_area_atuacao':
+      return { tipo: a.tipo, areaPropostaId: a.areaPropostaId }
   }
 }
 
 /** Ids referenciados na proposta que precisam ser carregados para a avaliação. */
 export function idsReferenciados(a: DetalheAlteracao) {
   return {
-    gestorId: a.tipo === 'mudanca_gestor' ? a.gestorPropostoId : null,
+    gestorId: a.tipo === 'mudanca_gestor' ? a.gestorPropostoId : a.tipo === 'transferencia_localidade' ? a.gestorPropostoId : null,
     cargoId: a.tipo === 'alteracao_cargo' || a.tipo === 'promocao' ? a.cargoPropostoId : null,
-    centroCustoId: a.tipo === 'transferencia_cc' ? a.centroCustoPropostoId : null,
+    centroCustoId: a.tipo === 'transferencia_cc' || a.tipo === 'transferencia_localidade' ? a.centroCustoPropostoId : null,
     folhaId: a.tipo === 'enquadramento' ? a.folhaPropostaId : null,
     horarioId: a.tipo === 'enquadramento' ? a.horarioPropostoId : null,
+    plantaId: a.tipo === 'transferencia_localidade' ? a.plantaPropostaId : null,
+    areaId: a.tipo === 'alteracao_area_atuacao' ? a.areaPropostaId : null,
   }
 }
 
@@ -198,11 +238,51 @@ export function avaliarMovimentacao(
       }
       break
     }
+    case 'transferencia_localidade': {
+      let motivoPlanta: string | undefined
+      if (!ctx.plantaPropostaExiste) motivoPlanta = 'Selecione a localidade (planta) proposta.'
+      else if (alteracao.plantaPropostaId === colaborador.plantaId) motivoPlanta = 'Selecione uma localidade diferente da atual.'
+      add('Localidade proposta válida e distinta da atual', !motivoPlanta)
+      if (motivoPlanta) fieldErrors.plantaPropostaId = motivoPlanta
+
+      const cc = ctx.centroCustoProposto
+      let motivoCc: string | undefined
+      if (!cc) motivoCc = 'Selecione o centro de custo proposto.'
+      else if (!motivoPlanta && cc.plantaId !== alteracao.plantaPropostaId) motivoCc = 'Centro de custo não pertence à localidade proposta.'
+      add('Centro de custo válido para a localidade de destino', !motivoCc)
+      if (motivoCc) fieldErrors.centroCustoPropostoId = motivoCc
+
+      if (alteracao.gestorPropostoId) {
+        const g = ctx.gestorProposto
+        let motivoGestor: string | undefined
+        if (!g) motivoGestor = 'Selecione o gestor de destino.'
+        else if (g.id === colaborador.id) motivoGestor = 'O gestor não pode ser o próprio colaborador.'
+        else if (g.status !== 'ativo') motivoGestor = 'O gestor de destino não está ativo.'
+        else if (!g.isGestor) motivoGestor = 'Colaborador selecionado não possui perfil de gestor.'
+        add('Gestor de destino ativo e distinto do colaborador', !motivoGestor)
+        if (motivoGestor) fieldErrors.gestorPropostoId = motivoGestor
+      }
+      break
+    }
+    case 'alteracao_mao_de_obra': {
+      const motivo = alteracao.tipoMaoDeObraProposto === alteracao.tipoMaoDeObraAtual ? 'Selecione um tipo de mão de obra diferente do atual.' : undefined
+      add('Tipo de mão de obra proposto distinto do atual', !motivo)
+      if (motivo) fieldErrors.tipoMaoDeObraProposto = motivo
+      break
+    }
+    case 'alteracao_area_atuacao': {
+      let motivo: string | undefined
+      if (!ctx.areaPropostaExiste) motivo = 'Selecione a área de atuação proposta.'
+      else if (alteracao.areaPropostaId === colaborador.areaId) motivo = 'Selecione uma área diferente da atual.'
+      add('Área de atuação proposta válida e distinta da atual', !motivo)
+      if (motivo) fieldErrors.areaPropostaId = motivo
+      break
+    }
     default:
       break
   }
 
-  if (alteracao.tipo === 'alteracao_salarial' || alteracao.tipo === 'promocao') {
+  if (alteracao.tipo === 'alteracao_salarial' || alteracao.tipo === 'promocao' || alteracao.tipo === 'merito') {
     const valor = alteracao.salarioProposto
     if (!Number.isFinite(valor) || valor <= 0) fieldErrors.salarioProposto = 'Informe um salário proposto válido.'
     else if (valor === colaborador.salario) fieldErrors.salarioProposto = 'Informe um valor diferente do salário atual.'

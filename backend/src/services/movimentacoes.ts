@@ -8,7 +8,7 @@ import {
   type UsuarioAutenticado,
 } from '../auth.ts'
 import { conflito, naoEncontrado, proibido, regraDeNegocio } from '../errors.ts'
-import { transicaoDaDecisao } from '../domain/fluxo.ts'
+import { etapaInicial, transicaoDaDecisao } from '../domain/fluxo.ts'
 import {
   avaliarMovimentacao,
   idsReferenciados,
@@ -38,6 +38,7 @@ export interface CorpoMovimentacao {
   vigencia?: string | null
   justificativa?: string | null
   alteracao?: Omit<PropostaAlteracao, 'tipo'> & { tipo?: TipoMovimentacao }
+  potencial?: 'baixo' | 'estavel' | 'alto' | null
 }
 
 interface MovRow {
@@ -65,13 +66,16 @@ function normalizarProposta(tipo: TipoMovimentacao, a: CorpoMovimentacao['altera
     folhaPropostaId: id(a?.folhaPropostaId),
     horarioPropostoId: id(a?.horarioPropostoId),
     centroCustoPropostoId: id(a?.centroCustoPropostoId),
+    plantaPropostaId: id(a?.plantaPropostaId),
+    tipoMaoDeObraProposto: a?.tipoMaoDeObraProposto === 'direta' || a?.tipoMaoDeObraProposto === 'indireta' ? a.tipoMaoDeObraProposto : null,
+    areaPropostaId: id(a?.areaPropostaId),
   }
 }
 
 async function carregarColaboradorCtx(q: Queryable, id: string): Promise<ColaboradorCtx | undefined> {
   if (!idValido(id)) return undefined
   const { rows } = await q.query(
-    `select id, nome, status, planta_id, cargo_id, centro_custo_id, folha_id, horario_id, gestor_id, salario
+    `select id, nome, status, planta_id, cargo_id, area_id, centro_custo_id, folha_id, horario_id, gestor_id, salario, tipo_mao_de_obra
        from colaboradores where id = $1`,
     [id],
   )
@@ -83,11 +87,13 @@ async function carregarColaboradorCtx(q: Queryable, id: string): Promise<Colabor
     status: r.status,
     plantaId: r.planta_id,
     cargoId: r.cargo_id,
+    areaId: r.area_id,
     centroCustoId: r.centro_custo_id,
     folhaId: r.folha_id,
     horarioId: r.horario_id,
     gestorId: r.gestor_id,
     salario: r.salario,
+    tipoMaoDeObra: r.tipo_mao_de_obra,
   }
 }
 
@@ -122,6 +128,8 @@ async function carregarContexto(
     : vazio
   const folha = idValido(refs.folhaId) ? await q.query(`select 1 from folhas where id = $1`, [refs.folhaId]) : vazio
   const horario = idValido(refs.horarioId) ? await q.query(`select 1 from horarios where id = $1`, [refs.horarioId]) : vazio
+  const planta = idValido(refs.plantaId) ? await q.query(`select 1 from plantas where id = $1`, [refs.plantaId]) : vazio
+  const area = idValido(refs.areaId) ? await q.query(`select 1 from areas where id = $1`, [refs.areaId]) : vazio
   const evid = movId
     ? await q.query(`select exists(select 1 from movimentacao_documentos where movimentacao_id = $1) as tem`, [movId])
     : { rows: [{ tem: false }] }
@@ -135,6 +143,8 @@ async function carregarContexto(
     centroCustoProposto: c ? { id: c.id, plantaId: c.planta_id } : null,
     folhaPropostaExiste: folha.rows.length > 0,
     horarioPropostoExiste: horario.rows.length > 0,
+    plantaPropostaExiste: planta.rows.length > 0,
+    areaPropostaExiste: area.rows.length > 0,
     temEvidencia: Boolean(evid.rows[0]?.tem),
   }
 }
@@ -198,13 +208,16 @@ export async function criarRascunho(pool: pg.Pool, usuario: UsuarioAutenticado, 
     const justificativa = (corpo.justificativa ?? '').trim()
     const ctx = await carregarContexto(client, colaborador, alteracao, null)
     const { checagens } = avaliarMovimentacao(corpo.tipo, alteracao, vigencia ?? '', justificativa, ctx)
+    const potencial = corpo.potencial ?? null
 
+    // Etapa do rascunho é só um valor cosmético (nada pendente até o envio); o valor definitivo
+    // é recalculado por etapaInicial() em enviarParaAprovacao, sempre a partir do estado atual.
     const { rows } = await client.query<{ id: string; protocolo: string }>(
       `insert into movimentacoes (colaborador_id, planta_id, solicitante_id, solicitante_nome, tipo, vigencia,
-                                  etapa_atual, status, alteracao, justificativa, checagens)
-       values ($1, $2, $3, $4, $5, $6, 'gestor', 'rascunho', $7, $8, $9)
+                                  etapa_atual, status, alteracao, justificativa, checagens, potencial)
+       values ($1, $2, $3, $4, $5, $6, 'gestor', 'rascunho', $7, $8, $9, $10)
        returning id, protocolo`,
-      [colaborador.id, colaborador.plantaId, usuario.id, usuario.nome, corpo.tipo, vigencia, JSON.stringify(alteracao), justificativa, JSON.stringify(checagens)],
+      [colaborador.id, colaborador.plantaId, usuario.id, usuario.nome, corpo.tipo, vigencia, JSON.stringify(alteracao), justificativa, JSON.stringify(checagens), potencial],
     )
     const mov = rows[0]!
     await registrarEvento(client, mov.id, 'abertura', usuario, `Rascunho ${mov.protocolo} criado.`)
@@ -232,13 +245,14 @@ export async function atualizarRascunho(
     const justificativa = (corpo.justificativa ?? '').trim()
     const ctx = await carregarContexto(client, colaborador, alteracao, mov.id)
     const { checagens } = avaliarMovimentacao(corpo.tipo, alteracao, vigencia ?? '', justificativa, ctx)
+    const potencial = corpo.potencial ?? null
 
     await client.query(
       `update movimentacoes
           set colaborador_id = $2, planta_id = $3, tipo = $4, vigencia = $5, justificativa = $6,
-              alteracao = $7, checagens = $8, updated_at = now()
+              alteracao = $7, checagens = $8, potencial = $9, updated_at = now()
         where id = $1`,
-      [mov.id, colaborador.id, colaborador.plantaId, corpo.tipo, vigencia, justificativa, JSON.stringify(alteracao), JSON.stringify(checagens)],
+      [mov.id, colaborador.id, colaborador.plantaId, corpo.tipo, vigencia, justificativa, JSON.stringify(alteracao), JSON.stringify(checagens), potencial],
     )
     await registrarEvento(client, mov.id, 'edicao', usuario, 'Rascunho atualizado.')
   })
@@ -246,7 +260,7 @@ export async function atualizarRascunho(
 
 // ---------- Envio para aprovação ----------
 
-export async function enviarParaAprovacao(pool: pg.Pool, usuario: UsuarioAutenticado, id: string): Promise<{ protocolo: string }> {
+export async function enviarParaAprovacao(pool: pg.Pool, usuario: UsuarioAutenticado, id: string): Promise<{ protocolo: string; etapaAtual: Exclude<EtapaMovimentacao, 'concluida'> }> {
   exigirEscrita(usuario)
   return withTransaction(pool, async (client) => {
     const mov = await travarMovimentacao(client, usuario, id)
@@ -266,22 +280,24 @@ export async function enviarParaAprovacao(pool: pg.Pool, usuario: UsuarioAutenti
       )
     }
     const reenvio = mov.status === 'devolvida'
+    const etapa = etapaInicial(colaborador.gestorId, usuario.colaboradorId)
     await client.query(
       `update movimentacoes
-          set status = 'em_andamento', etapa_atual = 'gestor', alteracao = $2, checagens = $3, updated_at = now()
+          set status = 'em_andamento', etapa_atual = $2, alteracao = $3, checagens = $4, updated_at = now()
         where id = $1`,
-      [mov.id, JSON.stringify(alteracao), JSON.stringify(checagens)],
+      [mov.id, etapa, JSON.stringify(alteracao), JSON.stringify(checagens)],
     )
+    const rotuloEtapa = etapa === 'gestor' ? 'Gestor' : 'RH Local'
     await registrarEvento(
       client,
       mov.id,
       'validacao',
       usuario,
       reenvio
-        ? 'Solicitação corrigida e reenviada para aprovação — etapa Gestor.'
-        : 'Rascunho enviado para aprovação — etapa Gestor.',
+        ? `Solicitação corrigida e reenviada para aprovação — etapa ${rotuloEtapa}.`
+        : `Rascunho enviado para aprovação — etapa ${rotuloEtapa}.`,
     )
-    return { protocolo: mov.protocolo }
+    return { protocolo: mov.protocolo, etapaAtual: etapa }
   })
 }
 

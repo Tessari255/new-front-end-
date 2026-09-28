@@ -12,6 +12,7 @@ export const TIPOS_COM_EVIDENCIA_OBRIGATORIA: TipoMovimentacao[] = [
   'alteracao_salarial',
   'promocao',
   'enquadramento',
+  'merito',
 ]
 
 export function evidenciaObrigatoria(tipo: TipoMovimentacao): boolean {
@@ -73,6 +74,9 @@ export function gerarChecagens(
     cargoPropostoId?: string
     centroCustoPropostoId?: string
     salarioProposto?: number
+    plantaPropostaId?: string
+    tipoMaoDeObraProposto?: 'direta' | 'indireta'
+    areaPropostaId?: string
   },
 ): ChecagemRegra[] {
   const checagens: ChecagemRegra[] = []
@@ -105,7 +109,26 @@ export function gerarChecagens(
     )
   }
 
-  if ((tipo === 'alteracao_salarial' || tipo === 'promocao') && extras.salarioProposto !== undefined) {
+  if (tipo === 'transferencia_localidade' && extras.plantaPropostaId) {
+    checagens.push(novaChecagem('Localidade proposta distinta da atual', extras.plantaPropostaId !== ctx.plantaId))
+    if (extras.centroCustoPropostoId) {
+      checagens.push(novaChecagem('Centro de custo válido para a localidade de destino', centroCustoValidoParaPlanta(extras.centroCustoPropostoId, extras.plantaPropostaId)))
+    }
+    if (extras.gestorPropostoId) {
+      const candidato = extras.todosColaboradores?.find((c) => c.id === extras.gestorPropostoId)
+      checagens.push(novaChecagem('Gestor de destino ativo e distinto do colaborador', gestorValido(candidato, ctx.colaborador).valido))
+    }
+  }
+
+  if (tipo === 'alteracao_mao_de_obra' && extras.tipoMaoDeObraProposto) {
+    checagens.push(novaChecagem('Tipo de mão de obra proposto distinto do atual', extras.tipoMaoDeObraProposto !== ctx.colaborador.tipoMaoDeObra))
+  }
+
+  if (tipo === 'alteracao_area_atuacao' && extras.areaPropostaId) {
+    checagens.push(novaChecagem('Área de atuação proposta distinta da atual', extras.areaPropostaId !== ctx.colaborador.areaId))
+  }
+
+  if ((tipo === 'alteracao_salarial' || tipo === 'promocao' || tipo === 'merito') && extras.salarioProposto !== undefined) {
     const cargoRef = extras.cargoPropostoId ?? ctx.colaborador.cargoId
     const { dentroDaFaixa } = faixaSalarialStatus(cargoRef, extras.salarioProposto)
     checagens.push(novaChecagem('Salário proposto dentro da faixa do cargo', dentroDaFaixa, 'aviso'))

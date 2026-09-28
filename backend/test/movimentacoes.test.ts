@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { after, before, beforeEach, describe, it } from 'node:test'
 import {
-  anexar, chamar, colaboradorPorNome, criarMudancaGestorEnviada, encerrar, idPorNome, iniciar, json, PDF_VALIDO, resetar, USUARIOS,
-  type Ctx,
+  anexar, chamar, colaboradorPorNome, criarMudancaGestorEnviada, criarMudancaGestorEnviadaPorRH, encerrar, idPorNome, iniciar, json,
+  PDF_VALIDO, resetar, USUARIOS, type Ctx,
 } from './helpers.ts'
 
 describe('regras de envio', () => {
@@ -61,7 +61,9 @@ describe('regras de envio', () => {
     assert.equal(envio.statusCode, 200, envio.body)
     const mov = json(envio).movimentacao
     assert.equal(mov.status, 'em_andamento')
-    assert.equal(mov.etapaAtual, 'gestor')
+    // Yasmin é a gestora direta de Bianca: pela regra "gestor não aprova a própria solicitação",
+    // o envio pula direto para RH Local.
+    assert.equal(mov.etapaAtual, 'rh_local')
     assert.ok(json(envio).historico.some((e: { tipo: string }) => e.tipo === 'validacao'))
   })
 
@@ -127,7 +129,7 @@ describe('fluxo de aprovação', () => {
     chamar(ctx, subject, 'POST', `/movimentacoes/${id}/decisoes`, { decisao, comentario })
 
   it('Gestor → RH Local → RH Central conclui o fluxo e grava decisões e eventos', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     assert.equal(mov.etapaAtual, 'gestor')
 
     const r1 = await decidir(USUARIOS.yasmin, mov.id, 'aprovado')
@@ -162,8 +164,22 @@ describe('fluxo de aprovação', () => {
     assert.equal((await decidir(USUARIOS.rhCentral, mov.id, 'aprovado')).statusCode, 409)
   })
 
+  it('gestor que cria o workflow para o próprio liderado não aprova a própria solicitação: pula direto para RH Local', async () => {
+    const mov = await criarMudancaGestorEnviada(ctx) // criado e enviado por Yasmin, gestora direta de Bianca
+    assert.equal(mov.status, 'em_andamento')
+    assert.equal(mov.etapaAtual, 'rh_local')
+    // Yasmin não tem mais nada a decidir aqui: a etapa pendente é rh_local, não gestor.
+    assert.equal((await decidir(USUARIOS.yasmin, mov.id, 'aprovado')).statusCode, 403)
+
+    const r1 = await decidir(USUARIOS.rhLocalJoi, mov.id, 'aprovado')
+    assert.equal(r1.statusCode, 200, r1.body)
+    assert.equal(json(r1).movimentacao.etapaAtual, 'rh_central')
+    // Nenhuma decisão foi registrada na etapa gestor (foi pulada, não "auto aprovada").
+    assert.equal(json(r1).movimentacao.decisoes.some((d: { etapa: string }) => d.etapa === 'gestor'), false)
+  })
+
   it('perfil ou escopo errado recebe 403 (ou 404 fora da planta); auditoria é somente leitura', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     // Etapa é do gestor: RH Local, RH Central e Auditoria não podem decidir.
     for (const subject of [USUARIOS.rhLocalJoi, USUARIOS.rhCentral, USUARIOS.auditoria]) {
       const res = await decidir(subject, mov.id, 'aprovado')
@@ -187,7 +203,7 @@ describe('fluxo de aprovação', () => {
   })
 
   it('duas decisões concorrentes na mesma etapa resultam em uma transição e um 409', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     const [a, b] = await Promise.all([decidir(USUARIOS.yasmin, mov.id, 'aprovado'), decidir(USUARIOS.yasmin, mov.id, 'aprovado')])
     assert.deepEqual([a.statusCode, b.statusCode].sort(), [200, 409])
     const perdedora = a.statusCode === 409 ? a : b
@@ -203,7 +219,7 @@ describe('fluxo de aprovação', () => {
   })
 
   it('aprovação e reprovação concorrentes também não avançam a etapa duas vezes', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     const [a, b] = await Promise.all([
       decidir(USUARIOS.yasmin, mov.id, 'aprovado'),
       decidir(USUARIOS.yasmin, mov.id, 'reprovado', 'Motivo suficiente para reprovar.'),
@@ -214,7 +230,7 @@ describe('fluxo de aprovação', () => {
   })
 
   it('devolução e reprovação exigem comentário com ao menos 5 caracteres (422)', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     for (const decisao of ['devolvido', 'reprovado']) {
       for (const comentario of [undefined, '', '    ', 'abc', ' ab ']) {
         const res = await decidir(USUARIOS.yasmin, mov.id, decisao, comentario)
@@ -228,14 +244,16 @@ describe('fluxo de aprovação', () => {
   })
 
   it('devolução volta para o gestor como "devolvida" e permite reenvio; reprovação encerra o fluxo', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     await decidir(USUARIOS.yasmin, mov.id, 'aprovado')
     const dev = await decidir(USUARIOS.rhLocalJoi, mov.id, 'devolvido', 'Faltou detalhar a justificativa.')
     assert.equal(json(dev).movimentacao.status, 'devolvida')
     assert.equal(json(dev).movimentacao.etapaAtual, 'gestor')
     assert.ok(json(dev).historico.some((e: { tipo: string; comentario?: string }) => e.tipo === 'devolucao' && e.comentario === 'Faltou detalhar a justificativa.'))
 
-    const reenvio = await chamar(ctx, USUARIOS.yasmin, 'POST', `/movimentacoes/${mov.id}/enviar`)
+    // Reenvio pelo mesmo solicitante original (RH Local): a etapa gestor continua pendente. Se
+    // quem reenviasse fosse a própria Yasmin (gestora de Bianca), o envio pularia para rh_local.
+    const reenvio = await chamar(ctx, USUARIOS.rhLocalJoi, 'POST', `/movimentacoes/${mov.id}/enviar`)
     assert.equal(reenvio.statusCode, 200, reenvio.body)
     assert.equal(json(reenvio).movimentacao.status, 'em_andamento')
     assert.equal(json(reenvio).movimentacao.etapaAtual, 'gestor')
@@ -249,7 +267,7 @@ describe('fluxo de aprovação', () => {
   })
 
   it('eventos e decisões são append-only no banco; logs também, exceto limpeza autorizada', async () => {
-    const mov = await criarMudancaGestorEnviada(ctx)
+    const mov = await criarMudancaGestorEnviadaPorRH(ctx)
     await decidir(USUARIOS.yasmin, mov.id, 'aprovado')
     await assert.rejects(ctx.pool.query('update movimentacao_eventos set descricao = $1 where movimentacao_id = $2', ['x', mov.id]), /append-only/)
     await assert.rejects(ctx.pool.query('delete from movimentacao_decisoes where movimentacao_id = $1', [mov.id]), /append-only/)

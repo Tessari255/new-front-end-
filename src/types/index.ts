@@ -63,6 +63,9 @@ export interface IdentificadoresExternos {
   statusSincronizacao: StatusSincronizacao
 }
 
+export type TipoMaoDeObra = 'direta' | 'indireta'
+export type Potencial = 'baixo' | 'estavel' | 'alto'
+
 export interface Colaborador {
   id: string
   matricula: string
@@ -83,6 +86,7 @@ export interface Colaborador {
   salarioBaseCargo: number | null
   faixaAtualPercentual: number | null
   ipe: number | null
+  tipoMaoDeObra: TipoMaoDeObra | null
   externos: IdentificadoresExternos
 }
 
@@ -95,6 +99,10 @@ export type TipoMovimentacao =
   | 'promocao'
   | 'enquadramento'
   | 'transferencia_cc'
+  | 'merito'
+  | 'transferencia_localidade'
+  | 'alteracao_mao_de_obra'
+  | 'alteracao_area_atuacao'
 
 export type EtapaMovimentacao = 'gestor' | 'rh_local' | 'rh_central' | 'concluida'
 
@@ -147,6 +155,34 @@ export interface AlteracaoTransferenciaCC {
   plantaPropostaId: string
 }
 
+export interface AlteracaoMerito {
+  tipo: 'merito'
+  salarioAtual: number
+  salarioProposto: number
+}
+
+export interface AlteracaoTransferenciaLocalidade {
+  tipo: 'transferencia_localidade'
+  plantaAtualId: string
+  plantaPropostaId: string
+  centroCustoAtualId: string
+  centroCustoPropostoId: string
+  gestorAtualId: string | null
+  gestorPropostoId: string | null
+}
+
+export interface AlteracaoMaoDeObra {
+  tipo: 'alteracao_mao_de_obra'
+  tipoMaoDeObraAtual: TipoMaoDeObra | null
+  tipoMaoDeObraProposto: TipoMaoDeObra
+}
+
+export interface AlteracaoAreaAtuacao {
+  tipo: 'alteracao_area_atuacao'
+  areaAtualId: string
+  areaPropostaId: string
+}
+
 export type DetalheAlteracao =
   | AlteracaoMudancaGestor
   | AlteracaoCargo
@@ -154,6 +190,10 @@ export type DetalheAlteracao =
   | AlteracaoPromocao
   | AlteracaoEnquadramento
   | AlteracaoTransferenciaCC
+  | AlteracaoMerito
+  | AlteracaoTransferenciaLocalidade
+  | AlteracaoMaoDeObra
+  | AlteracaoAreaAtuacao
 
 export interface ChecagemRegra {
   id: string
@@ -166,7 +206,7 @@ export interface Documento {
   id: string
   movimentacaoId: string
   nome: string
-  tipo: 'evidencia' | 'documento_aprovado' | 'offer_letter' | 'c_req' | 'e_req'
+  tipo: 'evidencia' | 'documento_aprovado' | 'offer_letter' | 'c_req' | 'e_req' | 'carta_promocao' | 'carta_merito'
   tamanhoBytes: number
   /** Colaborador autor, quando o usuário está vinculado a um (RH pode não estar). */
   autorId: string | null
@@ -219,6 +259,7 @@ export interface Movimentacao {
   status: StatusMovimentacao
   alteracao: DetalheAlteracao
   justificativa: string
+  potencial: Potencial | null
   documentosIds: string[]
   checagens: ChecagemRegra[]
   decisoes: DecisaoEtapa[]

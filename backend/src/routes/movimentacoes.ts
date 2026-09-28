@@ -68,7 +68,7 @@ export function rotasMovimentacoes(app: FastifyInstance, pool: pg.Pool) {
       'aprovacao',
       'Enviar para aprovação',
       () => enviarParaAprovacao(pool, usuario, id),
-      (r) => `${r.protocolo} encaminhada para a etapa Gestor.`,
+      (r) => `${r.protocolo} encaminhada para a etapa ${r.etapaAtual === 'gestor' ? 'Gestor' : 'RH Local'}.`,
     )
     return { ...(await recursoCanonico(pool, usuario, id)), logs: log ? [log] : [] }
   })

@@ -1,4 +1,4 @@
-import type { CampoDivergente, CategoriaLogIntegracao, Documento, EtapaMovimentacao, StatusColaborador, StatusDivergencia, StatusLogIntegracao, StatusMovimentacao, StatusSincronizacao, TipoMovimentacao } from '@/types'
+import type { CampoDivergente, CategoriaLogIntegracao, Documento, EtapaMovimentacao, Potencial, StatusColaborador, StatusDivergencia, StatusLogIntegracao, StatusMovimentacao, StatusSincronizacao, TipoMaoDeObra, TipoMovimentacao } from '@/types'
 
 export type Tom = 'success' | 'warning' | 'danger' | 'info' | 'neutral'
 
@@ -16,6 +16,14 @@ export function rotuloTipoMovimentacao(tipo: TipoMovimentacao): string {
       return 'Enquadramento'
     case 'transferencia_cc':
       return 'Transferência de centro de custo'
+    case 'merito':
+      return 'Mérito'
+    case 'transferencia_localidade':
+      return 'Transferência de localidade'
+    case 'alteracao_mao_de_obra':
+      return 'Alteração de mão de obra'
+    case 'alteracao_area_atuacao':
+      return 'Alteração de área de atuação'
   }
 }
 
@@ -101,6 +109,30 @@ export function rotuloIpe(ipe: number | null | undefined): string {
   }
 }
 
+export function rotuloTipoMaoDeObra(tipo: TipoMaoDeObra | null | undefined): string {
+  switch (tipo) {
+    case 'direta':
+      return 'Mão de obra direta'
+    case 'indireta':
+      return 'Mão de obra indireta'
+    default:
+      return 'Não definido'
+  }
+}
+
+export function rotuloPotencial(potencial: Potencial | null | undefined): string {
+  switch (potencial) {
+    case 'baixo':
+      return 'Baixo'
+    case 'estavel':
+      return 'Estável'
+    case 'alto':
+      return 'Alto potencial'
+    default:
+      return 'Não informado'
+  }
+}
+
 export function rotuloStatusSincronizacao(status: StatusSincronizacao): string {
   switch (status) {
     case 'sincronizado':
@@ -158,6 +190,10 @@ export function rotuloTipoDocumento(tipo: Documento['tipo']): string {
       return 'C-req'
     case 'e_req':
       return 'E-req'
+    case 'carta_promocao':
+      return 'Carta de promoção'
+    case 'carta_merito':
+      return 'Carta de mérito'
   }
 }
 

@@ -9,7 +9,7 @@ import { Avatar } from '@/components/ui/Avatar'
 import { DefinitionList } from '@/components/ui/DefinitionList'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/Tabs'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { rotuloIpe, rotuloStatusColaborador, rotuloStatusMovimentacao, rotuloStatusSincronizacao, rotuloTipoDocumento, rotuloTipoMovimentacao, tomStatusColaborador, tomStatusMovimentacao, tomStatusSincronizacao } from '@/lib/rotulos'
+import { rotuloIpe, rotuloStatusColaborador, rotuloStatusMovimentacao, rotuloStatusSincronizacao, rotuloTipoDocumento, rotuloTipoMaoDeObra, rotuloTipoMovimentacao, tomStatusColaborador, tomStatusMovimentacao, tomStatusSincronizacao } from '@/lib/rotulos'
 import { formatBytes, formatCurrency, formatDate, formatDateTime, formatPercentual } from '@/lib/format'
 import { tempoDeCasa } from '@/lib/tempoDeCasa'
 import { compararAlteracao } from '@/lib/movimentacao'
@@ -67,6 +67,8 @@ export default function ColaboradorDetailPage() {
 
   const divergenciaAberta = divergencias.find((d) => d.colaboradorId === colaborador.id && d.status !== 'resolvida')
   const salarioBaseDefinido = (colaborador.salarioBaseCargo ?? 0) > 0
+  const concluidasPorVigencia = [...concluidas].sort((a, b) => new Date(b.vigencia).getTime() - new Date(a.vigencia).getTime())
+  const ultimaMovimentacaoConcluida = concluidasPorVigencia[0]
 
   return (
     <div>
@@ -165,6 +167,17 @@ export default function ColaboradorDetailPage() {
                           : 'Salário-base não definido',
                       },
                       { label: 'IPE', value: rotuloIpe(colaborador.ipe) },
+                      { label: 'Tipo de mão de obra', value: rotuloTipoMaoDeObra(colaborador.tipoMaoDeObra) },
+                      {
+                        label: 'Última movimentação',
+                        value: ultimaMovimentacaoConcluida ? (
+                          <Link to={`/movimentacoes/${ultimaMovimentacaoConcluida.id}`} className="text-[var(--color-accent-hover)] hover:underline">
+                            {rotuloTipoMovimentacao(ultimaMovimentacaoConcluida.tipo)} em {formatDate(ultimaMovimentacaoConcluida.vigencia)}
+                          </Link>
+                        ) : (
+                          'Nenhuma até o momento'
+                        ),
+                      },
                     ]}
                   />
                 </CardContent>
@@ -260,10 +273,9 @@ export default function ColaboradorDetailPage() {
                     <EmptyState title="Sem histórico de movimentações concluídas" description="Nenhuma alteração foi finalizada ainda para este colaborador." />
                   ) : (
                     <ol className="space-y-5">
-                      {concluidas
-                        .sort((a, b) => new Date(b.vigencia).getTime() - new Date(a.vigencia).getTime())
+                      {concluidasPorVigencia
                         .map((mov) => {
-                          const campos = compararAlteracao(mov.alteracao, colaboradores)
+                          const campos = compararAlteracao(mov.alteracao, colaboradores, colaborador.plantaId)
                           return (
                             <li key={mov.id} className="relative pl-5">
                               <span className="absolute left-0 top-1.5 size-2 rounded-full bg-[var(--color-success)]" aria-hidden="true" />

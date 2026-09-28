@@ -70,7 +70,13 @@ describe('SSO Microsoft Entra', () => {
       assert.equal(expirado.statusCode, 401)
       const demoIgnorado = await app.inject({ method: 'GET', url: '/api/v1/bootstrap', headers: { 'x-demo-user-id': usuarioId } })
       assert.equal(demoIgnorado.statusCode, 401)
-      const assinaturaInvalida = await app.inject({ method: 'GET', url: '/api/v1/bootstrap', headers: { authorization: `Bearer ${(await assinar()).slice(0, -1)}x` } })
+      // Corrompe um caractere no meio da assinatura (não no último, cujos bits sobressalentes
+      // às vezes decodificam para o mesmo byte com outro caractere — falso negativo intermitente).
+      const partes = (await assinar()).split('.')
+      const assinatura = partes[2]!
+      const meio = Math.floor(assinatura.length / 2)
+      partes[2] = assinatura.slice(0, meio) + (assinatura[meio] === 'A' ? 'B' : 'A') + assinatura.slice(meio + 1)
+      const assinaturaInvalida = await app.inject({ method: 'GET', url: '/api/v1/bootstrap', headers: { authorization: `Bearer ${partes.join('.')}` } })
       assert.equal(assinaturaInvalida.statusCode, 401)
     } finally {
       await app.close()

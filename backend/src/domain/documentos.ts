@@ -3,7 +3,7 @@ import { regraDeNegocio } from '../errors.ts'
 import type { TipoDocumento } from '../types.ts'
 
 export const LIMITE_BYTES = 10 * 1024 * 1024
-export const TIPOS_DOCUMENTO: TipoDocumento[] = ['evidencia', 'documento_aprovado', 'offer_letter', 'c_req', 'e_req']
+export const TIPOS_DOCUMENTO: TipoDocumento[] = ['evidencia', 'documento_aprovado', 'offer_letter', 'c_req', 'e_req', 'carta_promocao', 'carta_merito']
 
 interface FormatoPermitido {
   mimes: string[]

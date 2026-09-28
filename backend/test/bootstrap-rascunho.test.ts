@@ -30,7 +30,7 @@ describe('bootstrap e rascunhos', () => {
     }
     assert.equal(b.plantas.length, 3)
     assert.equal(b.colaboradores.length, 44)
-    assert.equal(b.movimentacoes.length, 19)
+    assert.equal(b.movimentacoes.length, 23)
     assert.equal(b.currentUser.perfil, 'rh_central')
     assert.equal(typeof b.movimentacoes[0].id, 'string')
     assert.ok(['rascunho', 'em_andamento', 'devolvida', 'reprovada', 'aprovada'].includes(b.movimentacoes[0].status))

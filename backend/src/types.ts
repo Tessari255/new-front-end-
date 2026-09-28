@@ -12,7 +12,13 @@ export type TipoMovimentacao =
   | 'promocao'
   | 'enquadramento'
   | 'transferencia_cc'
-export type TipoDocumento = 'evidencia' | 'documento_aprovado' | 'offer_letter' | 'c_req' | 'e_req'
+  | 'merito'
+  | 'transferencia_localidade'
+  | 'alteracao_mao_de_obra'
+  | 'alteracao_area_atuacao'
+export type TipoDocumento = 'evidencia' | 'documento_aprovado' | 'offer_letter' | 'c_req' | 'e_req' | 'carta_promocao' | 'carta_merito'
+export type TipoMaoDeObra = 'direta' | 'indireta'
+export type Potencial = 'baixo' | 'estavel' | 'alto'
 export type Decisao = 'aprovado' | 'devolvido' | 'reprovado'
 export type TipoEvento =
   | 'abertura'
@@ -35,6 +41,10 @@ export const TIPOS_MOVIMENTACAO: TipoMovimentacao[] = [
   'promocao',
   'enquadramento',
   'transferencia_cc',
+  'merito',
+  'transferencia_localidade',
+  'alteracao_mao_de_obra',
+  'alteracao_area_atuacao',
 ]
 
 export interface AlteracaoMudancaGestor {
@@ -73,6 +83,30 @@ export interface AlteracaoTransferenciaCC {
   plantaAtualId: string
   plantaPropostaId: string
 }
+export interface AlteracaoMerito {
+  tipo: 'merito'
+  salarioAtual: number
+  salarioProposto: number
+}
+export interface AlteracaoTransferenciaLocalidade {
+  tipo: 'transferencia_localidade'
+  plantaAtualId: string
+  plantaPropostaId: string
+  centroCustoAtualId: string
+  centroCustoPropostoId: string
+  gestorAtualId: string | null
+  gestorPropostoId: string | null
+}
+export interface AlteracaoMaoDeObra {
+  tipo: 'alteracao_mao_de_obra'
+  tipoMaoDeObraAtual: TipoMaoDeObra | null
+  tipoMaoDeObraProposto: TipoMaoDeObra
+}
+export interface AlteracaoAreaAtuacao {
+  tipo: 'alteracao_area_atuacao'
+  areaAtualId: string
+  areaPropostaId: string
+}
 export type DetalheAlteracao =
   | AlteracaoMudancaGestor
   | AlteracaoCargo
@@ -80,6 +114,10 @@ export type DetalheAlteracao =
   | AlteracaoPromocao
   | AlteracaoEnquadramento
   | AlteracaoTransferenciaCC
+  | AlteracaoMerito
+  | AlteracaoTransferenciaLocalidade
+  | AlteracaoMaoDeObra
+  | AlteracaoAreaAtuacao
 
 export interface ChecagemRegra {
   id: string
@@ -97,6 +135,9 @@ export interface PropostaAlteracao {
   folhaPropostaId?: string | null
   horarioPropostoId?: string | null
   centroCustoPropostoId?: string | null
+  plantaPropostaId?: string | null
+  tipoMaoDeObraProposto?: TipoMaoDeObra | null
+  areaPropostaId?: string | null
 }
 
 export interface Usuario {

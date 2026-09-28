@@ -10,12 +10,14 @@ import type {
   DetalheAlteracao,
   EtapaMovimentacao,
   PerfilDemo,
+  Potencial,
   StatusColaborador,
   StatusDivergencia,
   StatusMovimentacao,
   StatusSincronizacao,
   TipoDocumento,
   TipoEvento,
+  TipoMaoDeObra,
   TipoMovimentacao,
 } from '../types.ts'
 
@@ -45,6 +47,7 @@ export interface SColaborador {
   apdataId: string
   employeeCentralId: string
   statusSincronizacao: StatusSincronizacao
+  tipoMaoDeObra: TipoMaoDeObra
 }
 export interface SUsuario { subject: string; nome: string; email: string; perfil: PerfilDemo; plantaKey: string | null; colaboradorKey: string | null }
 export interface SFonte { colaboradorKey: string; fonte: 'apdata' | 'employee_central'; gestor: string; cargo: string; centroCusto: string; area: string }
@@ -66,6 +69,7 @@ export interface SMovimentacao {
   decisoes: SDecisao[]
   documentos: SDocumento[]
   eventos: SEvento[]
+  potencial?: Potencial
   apdataGeradoEm?: string
   employeeCentralGeradoEm?: string
 }
@@ -193,22 +197,25 @@ interface SlotDef {
   isGestor: boolean
   reportsToSlot: number | null
   salarioFator: number
+  /** Mão de obra direta = execução de produção/manutenção em linha; indireta = os demais (regra fictícia de seed). */
+  maoDeObra: TipoMaoDeObra
 }
 
-const s = (cargoKey: string, areaKey: string, horarioKey: string, folhaKey: string, isGestor: boolean, reportsToSlot: number | null, salarioFator: number): SlotDef => ({
-  cargoKey, areaKey, horarioKey, folhaKey, isGestor, reportsToSlot, salarioFator,
-})
+const s = (
+  cargoKey: string, areaKey: string, horarioKey: string, folhaKey: string, isGestor: boolean, reportsToSlot: number | null, salarioFator: number,
+  maoDeObra: TipoMaoDeObra = 'indireta',
+): SlotDef => ({ cargoKey, areaKey, horarioKey, folhaKey, isGestor, reportsToSlot, salarioFator, maoDeObra })
 
 const TEMPLATE_PLANTA: SlotDef[] = [
   s('cargo-ger-planta', 'area-producao', 'horario-adm', 'folha-mensalista', true, null, 0.55),
   s('cargo-sup-prod', 'area-producao', 'horario-adm', 'folha-mensalista', true, 0, 0.5),
-  s('cargo-lider-prod', 'area-producao', 'horario-t1', 'folha-mensalista', true, 1, 0.45),
-  s('cargo-op2', 'area-producao', 'horario-t1', 'folha-horista', false, 2, 0.6),
-  s('cargo-op1', 'area-producao', 'horario-t1', 'folha-horista', false, 2, 0.3),
-  s('cargo-op1', 'area-producao', 'horario-t2', 'folha-horista', false, 1, 0.5),
+  s('cargo-lider-prod', 'area-producao', 'horario-t1', 'folha-mensalista', true, 1, 0.45, 'direta'),
+  s('cargo-op2', 'area-producao', 'horario-t1', 'folha-horista', false, 2, 0.6, 'direta'),
+  s('cargo-op1', 'area-producao', 'horario-t1', 'folha-horista', false, 2, 0.3, 'direta'),
+  s('cargo-op1', 'area-producao', 'horario-t2', 'folha-horista', false, 1, 0.5, 'direta'),
   s('cargo-sup-manut', 'area-manutencao', 'horario-adm', 'folha-mensalista', true, 0, 0.5),
-  s('cargo-tec-manut', 'area-manutencao', 'horario-t2', 'folha-mensalista', false, 6, 0.4),
-  s('cargo-tec-manut-sr', 'area-manutencao', 'horario-t3', 'folha-mensalista', false, 6, 0.55),
+  s('cargo-tec-manut', 'area-manutencao', 'horario-t2', 'folha-mensalista', false, 6, 0.4, 'direta'),
+  s('cargo-tec-manut-sr', 'area-manutencao', 'horario-t3', 'folha-mensalista', false, 6, 0.55, 'direta'),
   s('cargo-coord-qual', 'area-qualidade', 'horario-adm', 'folha-mensalista', true, 0, 0.5),
   s('cargo-analista-qual-pl', 'area-qualidade', 'horario-adm', 'folha-mensalista', false, 9, 0.45),
   s('cargo-analista-log', 'area-logistica', 'horario-adm', 'folha-mensalista', false, 0, 0.4),
@@ -276,6 +283,7 @@ function gerarColaboradores(): SColaborador[] {
       apdataId: `AP-${codigoPlanta}-${pad(indiceGlobal + 1, 4)}`,
       employeeCentralId: `EC-${10000 + indiceGlobal}`,
       statusSincronizacao: statusSync(indiceGlobal),
+      tipoMaoDeObra: slot.maoDeObra,
     }
     indiceGlobal += 1
     return c
@@ -326,28 +334,43 @@ interface Cenario {
   comArquivosGerados?: boolean
   comentario?: string
   pct?: number
+  potencial?: Potencial
+  /**
+   * Sobrescreve o solicitante padrão (gestor do colaborador). Necessário quando a etapa de
+   * referência é `gestor`: pela regra "gestor que cria o workflow não precisa aprovar", o
+   * próprio gestor não poderia estar com uma decisão pendente/registrada nessa etapa.
+   */
+  solicitantePersonalizado?: string
 }
 
+const RH_LOCAL_GRU = 'RH Local — Planta Guarulhos'
+const RH_LOCAL_JOI = 'RH Local — Planta Joinville'
+const RH_LOCAL_BET = 'RH Local — Planta Betim'
+
 const CENARIOS: Cenario[] = [
-  { colaboradorKey: 'col-gru-05', tipo: 'promocao', status: 'aprovada', etapaReferencia: 'concluida', dataAbertura: '2026-08-28', comEvidencia: true, comArquivosGerados: true, pct: 14 },
+  { colaboradorKey: 'col-gru-05', tipo: 'promocao', status: 'aprovada', etapaReferencia: 'concluida', dataAbertura: '2026-08-28', comEvidencia: true, comArquivosGerados: true, pct: 14, potencial: 'alto' },
   { colaboradorKey: 'col-gru-08', tipo: 'alteracao_cargo', status: 'aprovada', etapaReferencia: 'concluida', dataAbertura: '2026-08-30', comEvidencia: false, comArquivosGerados: false },
   { colaboradorKey: 'col-gru-11', tipo: 'alteracao_salarial', status: 'em_andamento', etapaReferencia: 'rh_central', dataAbertura: '2026-08-24', comEvidencia: true, pct: 11 },
-  { colaboradorKey: 'col-gru-03', tipo: 'mudanca_gestor', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-12', comEvidencia: false },
+  { colaboradorKey: 'col-gru-03', tipo: 'mudanca_gestor', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-12', comEvidencia: false, solicitantePersonalizado: RH_LOCAL_GRU },
   { colaboradorKey: 'col-gru-12', tipo: 'transferencia_cc', status: 'devolvida', etapaReferencia: 'rh_local', dataAbertura: '2026-08-14', comEvidencia: false, comentario: 'Centro de custo informado não possui orçamento aprovado para o trimestre. Favor confirmar novo CC com o Financeiro antes de reenviar.' },
   { colaboradorKey: 'col-gru-06', tipo: 'enquadramento', status: 'rascunho', etapaReferencia: 'gestor', dataAbertura: '2026-09-16', comEvidencia: false },
-  { colaboradorKey: 'col-joi-07', tipo: 'mudanca_gestor', status: 'reprovada', etapaReferencia: 'gestor', dataAbertura: '2026-08-17', comEvidencia: false, comentario: 'Mudança de reporte entre pares não se aplica neste caso; nível hierárquico do cargo exige vínculo com a Gerência de Planta.' },
+  { colaboradorKey: 'col-joi-07', tipo: 'mudanca_gestor', status: 'reprovada', etapaReferencia: 'gestor', dataAbertura: '2026-08-17', comEvidencia: false, comentario: 'Mudança de reporte entre pares não se aplica neste caso; nível hierárquico do cargo exige vínculo com a Gerência de Planta.', solicitantePersonalizado: RH_LOCAL_JOI },
   { colaboradorKey: 'col-joi-05', tipo: 'alteracao_cargo', status: 'em_andamento', etapaReferencia: 'rh_local', dataAbertura: '2026-09-01', comEvidencia: false },
-  { colaboradorKey: 'col-joi-08', tipo: 'promocao', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-10', comEvidencia: true, pct: 12 },
+  { colaboradorKey: 'col-joi-08', tipo: 'promocao', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-10', comEvidencia: true, pct: 12, potencial: 'alto', solicitantePersonalizado: RH_LOCAL_JOI },
   { colaboradorKey: 'col-joi-06', tipo: 'alteracao_salarial', status: 'aprovada', etapaReferencia: 'concluida', dataAbertura: '2026-09-02', comEvidencia: true, comArquivosGerados: true, pct: 9 },
   { colaboradorKey: 'col-joi-04', tipo: 'enquadramento', status: 'em_andamento', etapaReferencia: 'rh_central', dataAbertura: '2026-08-27', comEvidencia: true },
   { colaboradorKey: 'col-bet-05', tipo: 'mudanca_gestor', status: 'aprovada', etapaReferencia: 'concluida', dataAbertura: '2026-09-05', comEvidencia: false, comArquivosGerados: false },
-  { colaboradorKey: 'col-bet-08', tipo: 'alteracao_cargo', status: 'devolvida', etapaReferencia: 'gestor', dataAbertura: '2026-08-19', comEvidencia: false, comentario: 'Faltou detalhar o motivo técnico da mudança de cargo na justificativa. Por favor complementar com a avaliação de competências.' },
+  { colaboradorKey: 'col-bet-08', tipo: 'alteracao_cargo', status: 'devolvida', etapaReferencia: 'gestor', dataAbertura: '2026-08-19', comEvidencia: false, comentario: 'Faltou detalhar o motivo técnico da mudança de cargo na justificativa. Por favor complementar com a avaliação de competências.', solicitantePersonalizado: RH_LOCAL_BET },
   { colaboradorKey: 'col-bet-11', tipo: 'transferencia_cc', status: 'em_andamento', etapaReferencia: 'rh_local', dataAbertura: '2026-09-04', comEvidencia: false },
-  { colaboradorKey: 'col-bet-04', tipo: 'promocao', status: 'reprovada', etapaReferencia: 'rh_local', dataAbertura: '2026-08-12', comEvidencia: true, comentario: 'Orçamento de promoções do trimestre já foi integralmente utilizado pela unidade. Reavaliar no próximo ciclo.', pct: 16 },
+  { colaboradorKey: 'col-bet-04', tipo: 'promocao', status: 'reprovada', etapaReferencia: 'rh_local', dataAbertura: '2026-08-12', comEvidencia: true, comentario: 'Orçamento de promoções do trimestre já foi integralmente utilizado pela unidade. Reavaliar no próximo ciclo.', pct: 16, potencial: 'estavel' },
   { colaboradorKey: 'col-bet-06', tipo: 'alteracao_salarial', status: 'rascunho', etapaReferencia: 'gestor', dataAbertura: '2026-09-17', comEvidencia: false, pct: 10 },
-  { colaboradorKey: 'col-cor-04', tipo: 'alteracao_cargo', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-08', comEvidencia: false },
+  { colaboradorKey: 'col-cor-04', tipo: 'alteracao_cargo', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-08', comEvidencia: false, solicitantePersonalizado: RH_LOCAL_GRU },
   { colaboradorKey: 'col-cor-06', tipo: 'mudanca_gestor', status: 'em_andamento', etapaReferencia: 'rh_central', dataAbertura: '2026-08-22', comEvidencia: false },
-  { colaboradorKey: 'col-bet-09', tipo: 'transferencia_cc', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-15', comEvidencia: false },
+  { colaboradorKey: 'col-bet-09', tipo: 'transferencia_cc', status: 'em_andamento', etapaReferencia: 'gestor', dataAbertura: '2026-09-15', comEvidencia: false, solicitantePersonalizado: RH_LOCAL_BET },
+  { colaboradorKey: 'col-joi-09', tipo: 'merito', status: 'em_andamento', etapaReferencia: 'rh_local', dataAbertura: '2026-09-11', comEvidencia: true, pct: 6, potencial: 'estavel' },
+  { colaboradorKey: 'col-bet-07', tipo: 'transferencia_localidade', status: 'em_andamento', etapaReferencia: 'rh_central', dataAbertura: '2026-08-30', comEvidencia: false },
+  { colaboradorKey: 'col-gru-04', tipo: 'alteracao_mao_de_obra', status: 'aprovada', etapaReferencia: 'concluida', dataAbertura: '2026-08-20', comEvidencia: false, comArquivosGerados: false },
+  { colaboradorKey: 'col-joi-03', tipo: 'alteracao_area_atuacao', status: 'devolvida', etapaReferencia: 'rh_local', dataAbertura: '2026-09-05', comEvidencia: false, comentario: 'Área de atuação proposta não possui centro de custo compatível na planta atual. Reavaliar com o RH Local antes de reenviar.' },
 ]
 
 function justificativaPadrao(tipo: TipoMovimentacao, nome: string): string {
@@ -364,12 +387,20 @@ function justificativaPadrao(tipo: TipoMovimentacao, nome: string): string {
       return `Alteração do enquadramento de folha e jornada de ${nome}, adequando o regime de trabalho à nova rotina da função.`
     case 'transferencia_cc':
       return `Transferência de centro de custo de ${nome} em função de realocação orçamentária entre áreas da planta.`
+    case 'merito':
+      return `Reconhecimento de mérito para ${nome} com base na avaliação de desempenho do período e no orçamento de mérito da unidade.`
+    case 'transferencia_localidade':
+      return `Transferência de localidade de ${nome} para atender à necessidade operacional da unidade de destino, com aceite prévio do colaborador.`
+    case 'alteracao_mao_de_obra':
+      return `Reclassificação do tipo de mão de obra de ${nome} para refletir a natureza atual das atividades exercidas.`
+    case 'alteracao_area_atuacao':
+      return `Alteração da área de atuação de ${nome} conforme redesenho de responsabilidades da unidade.`
   }
 }
 
 function tipoDocumentoPara(tipo: TipoMovimentacao): TipoDocumento {
-  if (tipo === 'promocao') return 'offer_letter'
-  if (tipo === 'alteracao_cargo') return 'c_req'
+  if (tipo === 'promocao' || tipo === 'alteracao_cargo') return 'carta_promocao'
+  if (tipo === 'merito') return 'carta_merito'
   if (tipo === 'transferencia_cc') return 'e_req'
   return 'evidencia'
 }
@@ -377,12 +408,16 @@ function tipoDocumentoPara(tipo: TipoMovimentacao): TipoDocumento {
 function nomeArquivoEvidencia(tipo: TipoMovimentacao, nome: string): string {
   const base = nome.split(' ')[0]!.toLowerCase()
   const prefixo: Record<TipoMovimentacao, string> = {
-    promocao: 'offer-letter',
-    alteracao_cargo: 'c-req',
+    promocao: 'carta-promocao',
+    alteracao_cargo: 'carta-promocao',
     transferencia_cc: 'e-req',
     alteracao_salarial: 'memo-salarial',
     enquadramento: 'termo-enquadramento',
     mudanca_gestor: 'evidencia',
+    merito: 'carta-merito',
+    transferencia_localidade: 'termo-transferencia',
+    alteracao_mao_de_obra: 'termo-mao-de-obra',
+    alteracao_area_atuacao: 'termo-area-atuacao',
   }
   return `${prefixo[tipo]}-${base}.pdf`
 }
@@ -403,6 +438,10 @@ function gerarMovimentacoes(colaboradores: SColaborador[]): SMovimentacao[] {
       colaboradores.find((x) => x.isGestor && x.key !== c.key)!
     ).key
   const outroCC = (c: SColaborador) => centrosCusto.find((cc) => cc.plantaKey === c.plantaKey && cc.key !== c.centroCustoKey)!.key
+  const outraPlanta = (c: SColaborador) => plantas.find((p) => p.key !== c.plantaKey)!.key
+  const ccDaPlanta = (plantaKey: string) => centrosCusto.find((cc) => cc.plantaKey === plantaKey)!.key
+  const gestorDaPlanta = (plantaKey: string) => colaboradores.find((x) => x.isGestor && x.status === 'ativo' && x.plantaKey === plantaKey)?.key ?? null
+  const outraArea = (c: SColaborador) => areas.find((a) => a.key !== c.areaKey)!.key
 
   return CENARIOS.map((cenario): SMovimentacao => {
     const c = porKey.get(cenario.colaboradorKey)!
@@ -420,17 +459,27 @@ function gerarMovimentacoes(colaboradores: SColaborador[]): SMovimentacao[] {
           return { tipo: 'enquadramento', folhaPropostaId: 'folha-mensalista', horarioPropostoId: 'horario-adm' }
         case 'transferencia_cc':
           return { tipo: 'transferencia_cc', centroCustoPropostoId: outroCC(c) }
+        case 'merito':
+          return { tipo: 'merito', salarioProposto: arredondar50(c.salario * (1 + (cenario.pct ?? 5) / 100)) }
+        case 'transferencia_localidade': {
+          const plantaDestino = outraPlanta(c)
+          return { tipo: 'transferencia_localidade', plantaPropostaId: plantaDestino, centroCustoPropostoId: ccDaPlanta(plantaDestino), gestorPropostoId: gestorDaPlanta(plantaDestino) }
+        }
+        case 'alteracao_mao_de_obra':
+          return { tipo: 'alteracao_mao_de_obra', tipoMaoDeObraProposto: c.tipoMaoDeObra === 'direta' ? 'indireta' : 'direta' }
+        case 'alteracao_area_atuacao':
+          return { tipo: 'alteracao_area_atuacao', areaPropostaId: outraArea(c) }
       }
     })()
     const ctxColab: ColaboradorCtx = {
-      id: c.key, nome: c.nome, status: c.status, plantaId: c.plantaKey, cargoId: c.cargoKey, centroCustoId: c.centroCustoKey,
-      folhaId: c.folhaKey, horarioId: c.horarioKey, gestorId: c.gestorKey, salario: c.salario,
+      id: c.key, nome: c.nome, status: c.status, plantaId: c.plantaKey, cargoId: c.cargoKey, areaId: c.areaKey, centroCustoId: c.centroCustoKey,
+      folhaId: c.folhaKey, horarioId: c.horarioKey, gestorId: c.gestorKey, salario: c.salario, tipoMaoDeObra: c.tipoMaoDeObra,
     }
     const alteracao = montarAlteracao(proposta, ctxColab)
     const justificativa = justificativaPadrao(cenario.tipo, c.nome)
     const vigencia = addDays(cenario.dataAbertura, 35)
     const gestor = c.gestorKey ? porKey.get(c.gestorKey) : undefined
-    const solicitanteNome = gestor?.nome ?? 'RH Local'
+    const solicitanteNome = cenario.solicitantePersonalizado ?? gestor?.nome ?? 'RH Local'
     const planta = plantas.find((p) => p.key === c.plantaKey)!
 
     const toCargoCtx = (key: string | null): CargoCtx | null => {
@@ -438,8 +487,14 @@ function gerarMovimentacoes(colaboradores: SColaborador[]): SMovimentacao[] {
       return carg ? { id: carg.key, salarioMin: carg.salarioMin, salarioMax: carg.salarioMax, plantasPermitidas: carg.plantas } : null
     }
     const refs = alteracao
-    const gestorProposto = refs.tipo === 'mudanca_gestor' ? porKey.get(refs.gestorPropostoId) : undefined
-    const ccProposto = refs.tipo === 'transferencia_cc' ? ccPorKey.get(refs.centroCustoPropostoId) : undefined
+    const gestorProposto =
+      refs.tipo === 'mudanca_gestor' ? porKey.get(refs.gestorPropostoId)
+      : refs.tipo === 'transferencia_localidade' && refs.gestorPropostoId ? porKey.get(refs.gestorPropostoId)
+      : undefined
+    const ccProposto =
+      refs.tipo === 'transferencia_cc' ? ccPorKey.get(refs.centroCustoPropostoId)
+      : refs.tipo === 'transferencia_localidade' ? ccPorKey.get(refs.centroCustoPropostoId)
+      : undefined
     const { checagens } = avaliarMovimentacao(cenario.tipo, alteracao, vigencia, justificativa, {
       colaborador: ctxColab,
       gestorProposto: gestorProposto ? { id: gestorProposto.key, status: gestorProposto.status, isGestor: gestorProposto.isGestor } : null,
@@ -448,6 +503,8 @@ function gerarMovimentacoes(colaboradores: SColaborador[]): SMovimentacao[] {
       centroCustoProposto: ccProposto ? { id: ccProposto.key, plantaId: ccProposto.plantaKey } : null,
       folhaPropostaExiste: refs.tipo === 'enquadramento',
       horarioPropostoExiste: refs.tipo === 'enquadramento',
+      plantaPropostaExiste: refs.tipo === 'transferencia_localidade',
+      areaPropostaExiste: refs.tipo === 'alteracao_area_atuacao',
       temEvidencia: cenario.comEvidencia,
     })
 
@@ -521,7 +578,8 @@ function gerarMovimentacoes(colaboradores: SColaborador[]): SMovimentacao[] {
 
     return {
       colaboradorKey: c.key, plantaKey: c.plantaKey, tipo: cenario.tipo, solicitanteNome, dataAbertura: cenario.dataAbertura, vigencia,
-      etapaAtual, status: cenario.status, alteracao, justificativa, checagens, decisoes, documentos, eventos, apdataGeradoEm, employeeCentralGeradoEm,
+      etapaAtual, status: cenario.status, alteracao, justificativa, checagens, decisoes, documentos, eventos,
+      potencial: cenario.potencial, apdataGeradoEm, employeeCentralGeradoEm,
     }
   })
 }

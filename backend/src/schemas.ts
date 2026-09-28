@@ -34,6 +34,9 @@ const alteracaoProposta = {
     folhaPropostaId: idOpcional,
     horarioPropostoId: idOpcional,
     centroCustoPropostoId: idOpcional,
+    plantaPropostaId: idOpcional,
+    tipoMaoDeObraProposto: { type: ['string', 'null'], enum: ['direta', 'indireta', null] },
+    areaPropostaId: idOpcional,
   },
 } as const
 
@@ -47,6 +50,7 @@ export const bodyMovimentacao = {
     vigencia: { type: ['string', 'null'], maxLength: 10 },
     justificativa: { type: ['string', 'null'], maxLength: 5000 },
     alteracao: alteracaoProposta,
+    potencial: { type: ['string', 'null'], enum: ['baixo', 'estavel', 'alto', null] },
   },
 } as const
 
@@ -106,6 +110,7 @@ export const colaborador = obj({
   salarioBaseCargo: numNull,
   faixaAtualPercentual: numNull,
   ipe: intNull,
+  tipoMaoDeObra: strNull,
   externos: obj({ apdataId: str, employeeCentralId: str, statusSincronizacao: str }),
 })
 
@@ -134,6 +139,7 @@ export const movimentacao = obj({
   status: str,
   alteracao: { type: 'object', additionalProperties: true },
   justificativa: str,
+  potencial: strNull,
   documentosIds: arr(str),
   checagens: arr(checagem),
   decisoes: arr(decisao),

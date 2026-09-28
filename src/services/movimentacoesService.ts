@@ -2,7 +2,7 @@
 // identidade/planta/valores atuais e registra o log de integração; o cliente só mescla a resposta.
 import { apiDownload, apiJson, salvarArquivo } from '@/lib/apiClient'
 import { useAppStore, type RecursoMovimentacao } from '@/store/useAppStore'
-import type { DetalheAlteracao, Documento, Movimentacao, TipoMovimentacao } from '@/types'
+import type { DetalheAlteracao, Documento, Movimentacao, Potencial, TipoMovimentacao } from '@/types'
 import { mutar } from './bootstrapService'
 
 export interface NovaMovimentacaoInput {
@@ -11,6 +11,7 @@ export interface NovaMovimentacaoInput {
   vigencia: string
   justificativa: string
   alteracao: DetalheAlteracao
+  potencial?: Potencial | null
   /** Arquivos reais (File) enviados via multipart após a criação/atualização do rascunho. */
   arquivos: File[]
   comoRascunho: boolean
@@ -36,6 +37,14 @@ function proposta(a: DetalheAlteracao) {
       return { tipo: a.tipo, folhaPropostaId: a.folhaPropostaId, horarioPropostoId: a.horarioPropostoId }
     case 'transferencia_cc':
       return { tipo: a.tipo, centroCustoPropostoId: a.centroCustoPropostoId }
+    case 'merito':
+      return { tipo: a.tipo, salarioProposto: a.salarioProposto }
+    case 'transferencia_localidade':
+      return { tipo: a.tipo, plantaPropostaId: a.plantaPropostaId, centroCustoPropostoId: a.centroCustoPropostoId, gestorPropostoId: a.gestorPropostoId }
+    case 'alteracao_mao_de_obra':
+      return { tipo: a.tipo, tipoMaoDeObraProposto: a.tipoMaoDeObraProposto }
+    case 'alteracao_area_atuacao':
+      return { tipo: a.tipo, areaPropostaId: a.areaPropostaId }
   }
 }
 
@@ -46,6 +55,7 @@ function corpo(input: Omit<NovaMovimentacaoInput, 'arquivos' | 'comoRascunho'>) 
     vigencia: input.vigencia || null,
     justificativa: input.justificativa,
     alteracao: proposta(input.alteracao),
+    potencial: input.potencial ?? null,
   }
 }
 

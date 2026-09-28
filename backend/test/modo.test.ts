@@ -113,7 +113,7 @@ describe('modo de execução, CORS e operação', () => {
     const { rows } = await ctx.pool.query(`select salario from colaboradores where matricula = 'GRU0001'`)
     assert.equal(rows[0].salario, 12345)
     const { rows: n } = await ctx.pool.query(`select (select count(*) from colaboradores)::int as c, (select count(*) from movimentacoes)::int as m, (select count(*) from usuarios)::int as u`)
-    assert.deepEqual(n[0], { c: 44, m: 19, u: 10 })
+    assert.deepEqual(n[0], { c: 44, m: 23, u: 10 })
     await ctx.pool.query(`update colaboradores set salario = (select salario_min from cargos c where c.id = colaboradores.cargo_id) where matricula = 'GRU0001'`)
   })
 })

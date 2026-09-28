@@ -14,6 +14,17 @@ export function proximaEtapa(etapa: EtapaMovimentacao): EtapaMovimentacao {
   return ETAPAS_ORDEM[idx + 1]!
 }
 
+/**
+ * Planilha (aba OBSERVAÇÕES): "Gestor que cria o workflow não precisa aprovar." Quando quem envia
+ * para aprovação é o próprio gestor atual do colaborador, a etapa `gestor` seria uma auto-aprovação
+ * redundante — pula direto para `rh_local`. Nos demais casos (RH abrindo em nome de alguém, etc.),
+ * a etapa `gestor` segue exigida normalmente.
+ */
+export function etapaInicial(colaboradorGestorId: string | null, solicitanteColaboradorId: string | null): Exclude<EtapaMovimentacao, 'concluida'> {
+  if (solicitanteColaboradorId !== null && solicitanteColaboradorId === colaboradorGestorId) return 'rh_local'
+  return 'gestor'
+}
+
 export function nomeAprovador(etapa: EtapaMovimentacao, gestorNome: string | null, plantaNome: string): string {
   if (etapa === 'gestor') return gestorNome ?? 'Gestor direto'
   if (etapa === 'rh_local') return `RH Local — ${plantaNome}`

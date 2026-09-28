@@ -12,9 +12,9 @@ import { FileDropzone, type ArquivoSelecionado } from '@/components/ui/FileDropz
 import { useToast } from '@/components/ui/Toast'
 import { ComparacaoCampos } from '@/components/movimentacao/ComparacaoCampos'
 import { ChecagensList } from '@/components/movimentacao/ChecagensList'
-import type { DetalheAlteracao, TipoMovimentacao } from '@/types'
+import type { DetalheAlteracao, Potencial, TipoMaoDeObra, TipoMovimentacao } from '@/types'
 import { compararAlteracao } from '@/lib/movimentacao'
-import { rotuloTipoMovimentacao } from '@/lib/rotulos'
+import { rotuloPotencial, rotuloTipoMovimentacao } from '@/lib/rotulos'
 import { formatCurrency } from '@/lib/format'
 import { evidenciaObrigatoria, gestorValido, cargoCompativelComPlanta, centroCustoValidoParaPlanta, percentualAlteracaoSalarial, faixaSalarialStatus, NOTA_REGRAS_DEMO, gerarChecagens } from '@/data/rules'
 import { criarMovimentacao, atualizarRascunho, enviarParaAprovacao as enviarRascunhoParaAprovacao } from '@/services/movimentacoesService'
@@ -26,7 +26,13 @@ const TIPOS: { valor: TipoMovimentacao; titulo: string; descricao: string }[] = 
   { valor: 'promocao', titulo: 'Promoção', descricao: 'Combina novo cargo e novo salário.' },
   { valor: 'enquadramento', titulo: 'Enquadramento', descricao: 'Altera folha de pagamento e jornada/horário.' },
   { valor: 'transferencia_cc', titulo: 'Transferência de CC', descricao: 'Move o colaborador para outro centro de custo.' },
+  { valor: 'merito', titulo: 'Mérito', descricao: 'Ajusta o salário por reconhecimento de desempenho.' },
+  { valor: 'transferencia_localidade', titulo: 'Transferência de localidade', descricao: 'Move o colaborador para outra planta, com novo CC e gestor.' },
+  { valor: 'alteracao_mao_de_obra', titulo: 'Alteração de mão de obra', descricao: 'Reclassifica entre mão de obra direta e indireta.' },
+  { valor: 'alteracao_area_atuacao', titulo: 'Alteração de área de atuação', descricao: 'Move o colaborador para outra área.' },
 ]
+
+const POTENCIAIS: Potencial[] = ['baixo', 'estavel', 'alto']
 
 const PASSOS = [
   { label: 'Colaborador e tipo', description: 'Quem e o que muda' },
@@ -47,6 +53,10 @@ interface DraftForm {
   folhaPropostaId: string
   horarioPropostoId: string
   centroCustoPropostoId: string
+  plantaPropostaId: string
+  tipoMaoDeObraProposto: TipoMaoDeObra | ''
+  areaPropostaId: string
+  potencial: Potencial | ''
 }
 
 function vigenciaPadrao(): string {
@@ -68,10 +78,21 @@ const FORM_VAZIO: DraftForm = {
   folhaPropostaId: '',
   horarioPropostoId: '',
   centroCustoPropostoId: '',
+  plantaPropostaId: '',
+  tipoMaoDeObraProposto: '',
+  areaPropostaId: '',
+  potencial: '',
 }
 
-function hidratarFormulario(colaboradorId: string, tipo: TipoMovimentacao, alteracao: DetalheAlteracao, justificativa: string, vigencia: string): DraftForm {
-  const base: DraftForm = { ...FORM_VAZIO, colaboradorId, tipo, justificativa, vigencia }
+function hidratarFormulario(
+  colaboradorId: string,
+  tipo: TipoMovimentacao,
+  alteracao: DetalheAlteracao,
+  justificativa: string,
+  vigencia: string,
+  potencial: Potencial | null,
+): DraftForm {
+  const base: DraftForm = { ...FORM_VAZIO, colaboradorId, tipo, justificativa, vigencia, potencial: potencial ?? '' }
   switch (alteracao.tipo) {
     case 'mudanca_gestor':
       base.gestorPropostoId = alteracao.gestorPropostoId
@@ -93,6 +114,20 @@ function hidratarFormulario(colaboradorId: string, tipo: TipoMovimentacao, alter
     case 'transferencia_cc':
       base.centroCustoPropostoId = alteracao.centroCustoPropostoId
       break
+    case 'merito':
+      base.salarioProposto = String(alteracao.salarioProposto)
+      break
+    case 'transferencia_localidade':
+      base.plantaPropostaId = alteracao.plantaPropostaId
+      base.centroCustoPropostoId = alteracao.centroCustoPropostoId
+      base.gestorPropostoId = alteracao.gestorPropostoId ?? ''
+      break
+    case 'alteracao_mao_de_obra':
+      base.tipoMaoDeObraProposto = alteracao.tipoMaoDeObraProposto
+      break
+    case 'alteracao_area_atuacao':
+      base.areaPropostaId = alteracao.areaPropostaId
+      break
   }
   return base
 }
@@ -105,11 +140,13 @@ export default function NovaMovimentacaoPage() {
   const colaboradores = useAppStore((s) => s.colaboradores)
   const cargos = useAppStore((s) => s.cargos)
   const plantas = useAppStore((s) => s.plantas)
+  const areas = useAppStore((s) => s.areas)
   const centrosCusto = useAppStore((s) => s.centrosCusto)
   const horarios = useAppStore((s) => s.horarios)
   const folhas = useAppStore((s) => s.folhas)
   const movimentacoes = useAppStore((s) => s.movimentacoes)
   const documentos = useAppStore((s) => s.documentos)
+  const currentUser = useAppStore((s) => s.currentUser)
 
   const rascunhoId = searchParams.get('rascunhoId')
   const [rascunhoCriadoId, setRascunhoCriadoId] = React.useState<string | null>(null)
@@ -122,7 +159,12 @@ export default function NovaMovimentacaoPage() {
   const [enviando, setEnviando] = React.useState(false)
   const [tentouAvancar, setTentouAvancar] = React.useState(false)
   const [form, setForm] = React.useState<DraftForm>(() => {
-    if (rascunhoExistente) return hidratarFormulario(rascunhoExistente.colaboradorId, rascunhoExistente.tipo, rascunhoExistente.alteracao, rascunhoExistente.justificativa, rascunhoExistente.vigencia)
+    if (rascunhoExistente) {
+      return hidratarFormulario(
+        rascunhoExistente.colaboradorId, rascunhoExistente.tipo, rascunhoExistente.alteracao,
+        rascunhoExistente.justificativa, rascunhoExistente.vigencia, rascunhoExistente.potencial,
+      )
+    }
     return {
       ...FORM_VAZIO,
       colaboradorId: searchParams.get('colaboradorId') ?? '',
@@ -175,6 +217,34 @@ export default function NovaMovimentacaoPage() {
           centroCustoPropostoId: form.centroCustoPropostoId || colaborador.centroCustoId,
           plantaAtualId: colaborador.plantaId,
           plantaPropostaId: colaborador.plantaId,
+        }
+      case 'merito':
+        return {
+          tipo: 'merito',
+          salarioAtual: colaborador.salario,
+          salarioProposto: form.salarioProposto ? Number(form.salarioProposto) : colaborador.salario,
+        }
+      case 'transferencia_localidade':
+        return {
+          tipo: 'transferencia_localidade',
+          plantaAtualId: colaborador.plantaId,
+          plantaPropostaId: form.plantaPropostaId || colaborador.plantaId,
+          centroCustoAtualId: colaborador.centroCustoId,
+          centroCustoPropostoId: form.centroCustoPropostoId || colaborador.centroCustoId,
+          gestorAtualId: colaborador.gestorId,
+          gestorPropostoId: form.gestorPropostoId || null,
+        }
+      case 'alteracao_mao_de_obra':
+        return {
+          tipo: 'alteracao_mao_de_obra',
+          tipoMaoDeObraAtual: colaborador.tipoMaoDeObra,
+          tipoMaoDeObraProposto: form.tipoMaoDeObraProposto || (colaborador.tipoMaoDeObra === 'direta' ? 'indireta' : 'direta'),
+        }
+      case 'alteracao_area_atuacao':
+        return {
+          tipo: 'alteracao_area_atuacao',
+          areaAtualId: colaborador.areaId,
+          areaPropostaId: form.areaPropostaId || colaborador.areaId,
         }
       default:
         return null
@@ -235,6 +305,31 @@ export default function NovaMovimentacaoPage() {
         erros.centroCustoPropostoId = 'Centro de custo não pertence à planta do colaborador.'
       }
     }
+    if (form.tipo === 'merito') {
+      const valor = Number(form.salarioProposto)
+      if (!form.salarioProposto || Number.isNaN(valor) || valor <= 0) erros.salarioProposto = 'Informe um salário proposto válido.'
+      else if (valor === colaborador.salario) erros.salarioProposto = 'Informe um valor diferente do salário atual.'
+    }
+    if (form.tipo === 'transferencia_localidade') {
+      if (!form.plantaPropostaId) erros.plantaPropostaId = 'Selecione a localidade proposta.'
+      else if (form.plantaPropostaId === colaborador.plantaId) erros.plantaPropostaId = 'Selecione uma localidade diferente da atual.'
+      if (!form.centroCustoPropostoId) erros.centroCustoPropostoId = 'Selecione o centro de custo proposto.'
+      else if (form.plantaPropostaId && !centroCustoValidoParaPlanta(form.centroCustoPropostoId, form.plantaPropostaId)) {
+        erros.centroCustoPropostoId = 'Centro de custo não pertence à localidade proposta.'
+      }
+      if (form.gestorPropostoId) {
+        const resultado = gestorValido(colaboradores.find((c) => c.id === form.gestorPropostoId), colaborador)
+        if (!resultado.valido) erros.gestorPropostoId = resultado.motivo!
+      }
+    }
+    if (form.tipo === 'alteracao_mao_de_obra') {
+      if (!form.tipoMaoDeObraProposto) erros.tipoMaoDeObraProposto = 'Selecione o tipo de mão de obra proposto.'
+      else if (form.tipoMaoDeObraProposto === colaborador.tipoMaoDeObra) erros.tipoMaoDeObraProposto = 'Selecione um tipo diferente do atual.'
+    }
+    if (form.tipo === 'alteracao_area_atuacao') {
+      if (!form.areaPropostaId) erros.areaPropostaId = 'Selecione a área de atuação proposta.'
+      else if (form.areaPropostaId === colaborador.areaId) erros.areaPropostaId = 'Selecione uma área diferente da atual.'
+    }
     return erros
   }
 
@@ -279,6 +374,7 @@ export default function NovaMovimentacaoPage() {
       vigencia: form.vigencia,
       justificativa: form.justificativa,
       alteracao,
+      potencial: form.potencial || null,
       arquivos: form.arquivos.map((a) => a.file),
     }
   }
@@ -322,11 +418,12 @@ export default function NovaMovimentacaoPage() {
         // Salva, envia todos os arquivos e só então envia para aprovação; qualquer falha interrompe o fluxo.
         await atualizarRascunho(rascunhoExistente.id, dadosParaSalvar(alteracao), progresso)
         await enviarRascunhoParaAprovacao(rascunhoExistente.id)
-        mov = rascunhoExistente
+        mov = useAppStore.getState().movimentacoes.find((m) => m.id === rascunhoExistente.id) ?? rascunhoExistente
       } else {
         mov = await criarMovimentacao({ ...dadosParaSalvar(alteracao), comoRascunho: false }, progresso)
       }
-      notificar({ tipo: 'sucesso', titulo: 'Solicitação enviada', descricao: `${mov.protocolo} encaminhada para aprovação do gestor.` })
+      const etapaDescricao = mov.etapaAtual === 'gestor' ? 'aprovação do gestor' : mov.etapaAtual === 'rh_local' ? 'aprovação do RH Local' : 'aprovação do RH Central'
+      notificar({ tipo: 'sucesso', titulo: 'Solicitação enviada', descricao: `${mov.protocolo} encaminhada para ${etapaDescricao}.` })
       navigate(`/movimentacoes/${mov.id}`)
     } catch (erro) {
       notificarErro(erro, 'A solicitação não foi enviada')
@@ -336,18 +433,26 @@ export default function NovaMovimentacaoPage() {
   }
 
   const alteracaoAtual = construirAlteracao()
-  const camposComparados = alteracaoAtual && colaborador ? compararAlteracao(alteracaoAtual, colaboradores) : []
+  const camposComparados = alteracaoAtual && colaborador ? compararAlteracao(alteracaoAtual, colaboradores, colaborador.plantaId) : []
   const checagensPreview =
     colaborador && form.tipo && alteracaoAtual
       ? gerarChecagens(
           form.tipo,
           { colaborador, plantaId: colaborador.plantaId, justificativa: form.justificativa, temEvidencia: form.arquivos.length > 0 || documentosExistentes.length > 0, vigencia: form.vigencia },
           {
-            gestorPropostoId: alteracaoAtual.tipo === 'mudanca_gestor' ? alteracaoAtual.gestorPropostoId : undefined,
+            gestorPropostoId:
+              alteracaoAtual.tipo === 'mudanca_gestor' ? alteracaoAtual.gestorPropostoId
+              : alteracaoAtual.tipo === 'transferencia_localidade' ? (alteracaoAtual.gestorPropostoId ?? undefined)
+              : undefined,
             todosColaboradores: colaboradores,
             cargoPropostoId: alteracaoAtual.tipo === 'alteracao_cargo' || alteracaoAtual.tipo === 'promocao' ? alteracaoAtual.cargoPropostoId : undefined,
-            centroCustoPropostoId: alteracaoAtual.tipo === 'transferencia_cc' ? alteracaoAtual.centroCustoPropostoId : undefined,
-            salarioProposto: alteracaoAtual.tipo === 'alteracao_salarial' || alteracaoAtual.tipo === 'promocao' ? alteracaoAtual.salarioProposto : undefined,
+            centroCustoPropostoId:
+              alteracaoAtual.tipo === 'transferencia_cc' || alteracaoAtual.tipo === 'transferencia_localidade' ? alteracaoAtual.centroCustoPropostoId : undefined,
+            salarioProposto:
+              alteracaoAtual.tipo === 'alteracao_salarial' || alteracaoAtual.tipo === 'promocao' || alteracaoAtual.tipo === 'merito' ? alteracaoAtual.salarioProposto : undefined,
+            plantaPropostaId: alteracaoAtual.tipo === 'transferencia_localidade' ? alteracaoAtual.plantaPropostaId : undefined,
+            tipoMaoDeObraProposto: alteracaoAtual.tipo === 'alteracao_mao_de_obra' ? alteracaoAtual.tipoMaoDeObraProposto : undefined,
+            areaPropostaId: alteracaoAtual.tipo === 'alteracao_area_atuacao' ? alteracaoAtual.areaPropostaId : undefined,
           },
         )
       : []
@@ -422,10 +527,28 @@ export default function NovaMovimentacaoPage() {
 
             {passo === 1 && colaborador && form.tipo && (
               <div className="space-y-5">
-                <div>
-                  <Label htmlFor="input-vigencia">Data de vigência</Label>
-                  <Input id="input-vigencia" type="date" className="max-w-[220px]" value={form.vigencia} onChange={(e) => atualizar('vigencia', e.target.value)} invalid={!!mostrarErro('vigencia')} />
-                  <FieldError>{mostrarErro('vigencia')}</FieldError>
+                <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                  <div>
+                    <Label htmlFor="input-vigencia">Data de vigência</Label>
+                    <Input id="input-vigencia" type="date" className="max-w-[220px]" value={form.vigencia} onChange={(e) => atualizar('vigencia', e.target.value)} invalid={!!mostrarErro('vigencia')} />
+                    <FieldError>{mostrarErro('vigencia')}</FieldError>
+                  </div>
+                  <div>
+                    <Label htmlFor="select-potencial">Potencial (opcional)</Label>
+                    <Select value={form.potencial || 'nao_informado'} onValueChange={(v) => atualizar('potencial', v === 'nao_informado' ? '' : (v as Potencial))}>
+                      <SelectTrigger id="select-potencial">
+                        <SelectValue placeholder="Não informado" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="nao_informado">Não informado</SelectItem>
+                        {POTENCIAIS.map((p) => (
+                          <SelectItem key={p} value={p}>
+                            {rotuloPotencial(p)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
 
                 {form.tipo === 'mudanca_gestor' && (
@@ -550,6 +673,127 @@ export default function NovaMovimentacaoPage() {
                   </div>
                 )}
 
+                {form.tipo === 'merito' && (
+                  <div>
+                    <Label htmlFor="input-salario-merito">Salário proposto (R$)</Label>
+                    <Input
+                      id="input-salario-merito"
+                      type="number"
+                      min={0}
+                      step={50}
+                      className="max-w-[220px]"
+                      value={form.salarioProposto}
+                      onChange={(e) => atualizar('salarioProposto', e.target.value)}
+                      invalid={!!mostrarErro('salarioProposto')}
+                    />
+                    <FieldError>{mostrarErro('salarioProposto')}</FieldError>
+                    {form.salarioProposto && !Number.isNaN(Number(form.salarioProposto)) && (
+                      <AvisosSalariais cargoId={colaborador.cargoId} salarioAtual={colaborador.salario} salarioProposto={Number(form.salarioProposto)} />
+                    )}
+                  </div>
+                )}
+
+                {form.tipo === 'transferencia_localidade' && (
+                  <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="select-planta-proposta">Localidade proposta</Label>
+                      <Select
+                        value={form.plantaPropostaId}
+                        onValueChange={(v) => setForm((atual) => ({ ...atual, plantaPropostaId: v, centroCustoPropostoId: '', gestorPropostoId: '' }))}
+                      >
+                        <SelectTrigger id="select-planta-proposta" invalid={!!mostrarErro('plantaPropostaId')}>
+                          <SelectValue placeholder="Selecione a nova planta" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {plantas
+                            .filter((p) => p.id !== colaborador.plantaId)
+                            .map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.nome}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      <FieldError>{mostrarErro('plantaPropostaId')}</FieldError>
+                    </div>
+                    <div>
+                      <Label htmlFor="select-cc-localidade">Centro de custo proposto</Label>
+                      <Select value={form.centroCustoPropostoId} onValueChange={(v) => atualizar('centroCustoPropostoId', v)}>
+                        <SelectTrigger id="select-cc-localidade" invalid={!!mostrarErro('centroCustoPropostoId')}>
+                          <SelectValue placeholder="Selecione o centro de custo" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {centrosCusto
+                            .filter((cc) => cc.plantaId === form.plantaPropostaId)
+                            .map((cc) => (
+                              <SelectItem key={cc.id} value={cc.id}>
+                                {cc.codigo} · {cc.nome}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      <FieldError>{mostrarErro('centroCustoPropostoId')}</FieldError>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <Label htmlFor="select-gestor-destino">Gestor de destino (opcional)</Label>
+                      <Select value={form.gestorPropostoId || 'sem_gestor'} onValueChange={(v) => atualizar('gestorPropostoId', v === 'sem_gestor' ? '' : v)}>
+                        <SelectTrigger id="select-gestor-destino" invalid={!!mostrarErro('gestorPropostoId')}>
+                          <SelectValue placeholder="Selecione o gestor na localidade de destino" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="sem_gestor">A definir</SelectItem>
+                          {colaboradores
+                            .filter((c) => c.isGestor && c.status === 'ativo' && c.plantaId === form.plantaPropostaId && c.id !== colaborador.id)
+                            .map((c) => (
+                              <SelectItem key={c.id} value={c.id}>
+                                {c.nome} — {cargos.find((cg) => cg.id === c.cargoId)?.nome}
+                              </SelectItem>
+                            ))}
+                        </SelectContent>
+                      </Select>
+                      <FieldError>{mostrarErro('gestorPropostoId')}</FieldError>
+                      <FieldHint>Quando informado, exige aprovação também do gestor de destino (regra pendente de definição de negócio para o escopo exato).</FieldHint>
+                    </div>
+                  </div>
+                )}
+
+                {form.tipo === 'alteracao_mao_de_obra' && (
+                  <div>
+                    <Label htmlFor="select-mao-de-obra">Tipo de mão de obra proposto</Label>
+                    <Select value={form.tipoMaoDeObraProposto} onValueChange={(v) => atualizar('tipoMaoDeObraProposto', v as TipoMaoDeObra)}>
+                      <SelectTrigger id="select-mao-de-obra" invalid={!!mostrarErro('tipoMaoDeObraProposto')}>
+                        <SelectValue placeholder="Selecione o tipo de mão de obra" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="direta">Mão de obra direta</SelectItem>
+                        <SelectItem value="indireta">Mão de obra indireta</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FieldError>{mostrarErro('tipoMaoDeObraProposto')}</FieldError>
+                  </div>
+                )}
+
+                {form.tipo === 'alteracao_area_atuacao' && (
+                  <div>
+                    <Label htmlFor="select-area-proposta">Área de atuação proposta</Label>
+                    <Select value={form.areaPropostaId} onValueChange={(v) => atualizar('areaPropostaId', v)}>
+                      <SelectTrigger id="select-area-proposta" invalid={!!mostrarErro('areaPropostaId')}>
+                        <SelectValue placeholder="Selecione a nova área" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {areas
+                          .filter((a) => a.id !== colaborador.areaId)
+                          .map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.nome}
+                            </SelectItem>
+                          ))}
+                      </SelectContent>
+                    </Select>
+                    <FieldError>{mostrarErro('areaPropostaId')}</FieldError>
+                  </div>
+                )}
+
                 {camposComparados.length > 0 && (
                   <div>
                     <Label>Comparação</Label>
@@ -639,7 +883,13 @@ export default function NovaMovimentacaoPage() {
 
                 <div className="rounded-[var(--radius-md)] border border-[var(--color-border)] bg-white p-4">
                   <p className="text-[13px] font-medium text-[var(--color-ink)]">Fluxo de aprovação</p>
-                  <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Gestor → RH Local → RH Central. Cada etapa avança após aprovação individual.</p>
+                  {currentUser?.colaboradorId && currentUser.colaboradorId === colaborador.gestorId ? (
+                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">
+                      RH Local → RH Central. Como você é o gestor direto do colaborador, a etapa Gestor é pulada (regra: quem cria o workflow não aprova a própria solicitação).
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-[var(--color-ink-muted)]">Gestor → RH Local → RH Central. Cada etapa avança após aprovação individual.</p>
+                  )}
                 </div>
               </div>
             )}
