@@ -1,0 +1,20 @@
+# Apenas o PostgreSQL de desenvolvimento local. Credenciais abaixo são só para uso local.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nexo
+      POSTGRES_PASSWORD: nexo
+      POSTGRES_DB: nexo_people
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+    volumes:
+      - nexo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nexo -d nexo_people"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  nexo_pgdata:
