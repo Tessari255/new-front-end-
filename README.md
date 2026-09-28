@@ -118,7 +118,7 @@ Para chegar à caixa de entrada do Gmail e de domínios corporativos, configure 
 ```bash
 # backend/
 npm run dev | build | start | typecheck | lint
-npm test                    # 63 testes node:test contra PostgreSQL real (banco nexo_people_test)
+npm test                    # 82 testes node:test contra PostgreSQL real (banco nexo_people_test)
 npm run db:migrate          # aplica migrações SQL versionadas (db:migrate:down reverte a última)
 npm run db:seed             # idempotente; exige DEMO_MODE=true; nunca sobrescreve dados existentes
 npm run reconcile           # mesma conciliação do endpoint; para agendador externo (cron etc.)
@@ -172,13 +172,15 @@ planta e colaborador no banco — o cliente e o token nunca escolhem um perfil.
 
 | Perfil | Usuários seed | Escopo de leitura | Pode decidir |
 | --- | --- | --- | --- |
-| Gestor | 5 gestores (ex.: Yasmin Rodrigues Freitas, Joinville) | planta do próprio colaborador | etapa `gestor`, apenas de seus liderados diretos |
+| Gestor | 5 gestores (ex.: Yasmin Rodrigues Freitas, Joinville) | planta do próprio colaborador | etapa `gestor`, apenas de seus liderados diretos (e, em transferência de localidade com gestor de destino informado, também como gestor de destino) |
 | RH Local | 1 por planta | sua planta | etapa `rh_local` da sua planta |
-| RH Central | Sede Corporativa | todas as plantas | etapa `rh_central` |
+| RH Central | Sede Corporativa | todas as plantas | etapa `rh_central`; libera movimentação aprovada para a Folha |
 | Auditoria | 1 | todas | nunca (somente leitura) |
+| Share | 1 | todas | nunca decide etapa — trava/libera o fechamento mensal da folha |
 
-Criar/editar/anexar: Gestor, RH Local e RH Central dentro do escopo. Executar/atribuir/resolver
-conciliação: RH Local (sua planta) e RH Central. Gerar arquivos de saída e limpar o log: RH Central.
+Criar/editar/anexar/cancelar: Gestor, RH Local e RH Central dentro do escopo. Executar/atribuir/resolver
+conciliação: RH Local (sua planta) e RH Central. Gerar arquivos de saída e liberar para a Folha: RH
+Central. Travar/liberar o fechamento mensal: Share. Limpar o log: RH Central.
 Recurso fora do escopo responde `404`; sem permissão, `403`.
 
 ## API (`/api/v1`)
@@ -188,10 +190,12 @@ Recurso fora do escopo responde `404`; sem permissão, `403`.
 | `GET /bootstrap` | Estado inicial filtrado pelo escopo (sem bytes de documentos) + `currentUser` |
 | `POST /movimentacoes` · `PATCH /movimentacoes/:id/rascunho` | Cria/edita rascunho (só colaborador e tipo são obrigatórios) |
 | `POST /movimentacoes/:id/enviar` | Reavalia todas as regras; bloqueia (`422`) se houver checagem bloqueante |
-| `POST /movimentacoes/:id/decisoes` | `{decisao, comentario}`; transação com `SELECT … FOR UPDATE`; `409` em conflito |
+| `POST /movimentacoes/:id/decisoes` | `{decisao, comentario}`; transação com `SELECT … FOR UPDATE`; `409` em conflito. Em transferência de localidade com gestor de destino, exige aprovação de ambos na etapa `gestor` |
+| `POST /movimentacoes/:id/cancelar` | Cancela uma alteração (rascunho/em andamento/devolvida/reprovada); não afeta as demais do mesmo chamado |
 | `POST /movimentacoes/:id/documentos` · `GET /documentos/:id/download` | Upload multipart (PDF, DOCX, PNG, JPG ≤ 10 MB) e download autorizado |
+| `GET /folha` · `POST /folha/travar` · `POST /folha/liberar` | Fechamento mensal (perfil Share); `POST /movimentacoes/:id/liberar-folha` libera uma movimentação aprovada para a Folha (RH Central) |
 | `POST /conciliacoes` · `PATCH /divergencias/:id/responsavel` · `POST /divergencias/:id/resolucao` | Conciliação |
-| `POST /movimentacoes/:id/exportacoes/{apdata,employee-central}` | Download do arquivo demonstrativo (movimentações aprovadas) |
+| `POST /movimentacoes/:id/exportacoes/{apdata,employee-central}` | Download do arquivo demonstrativo — exige as três liberações: fluxo aprovado, RH liberou para a Folha e mês de vigência não travado |
 | `GET/DELETE /logs-integracao` | Log de integração (limpeza só RH Central com escopo global, auditada) |
 | `POST /auth/cadastro` · `POST /auth/confirmar` · `POST /auth/login` · `POST /auth/logout` | Login por e-mail e senha (só com `AUTH_EMAIL_SENHA=true`) |
 | `POST /auth/recuperar-senha` · `POST /auth/redefinir-senha` · `GET /auth/sessao` | Recuperação de senha e sessão atual |
@@ -203,12 +207,30 @@ sem stack ou SQL. O `X-Correlation-Id` é propagado nos logs estruturados do Fas
 
 ## Comportamentos importantes
 
-- **Regras de envio** (recalculadas no servidor): justificativa ≥ 10 caracteres; vigência válida;
-  gestor proposto ativo, gestor, diferente do atual e do próprio colaborador; cargo permitido na planta;
-  salário positivo e diferente do atual; enquadramento muda folha ou horário; centro de custo da planta
-  atual; evidência obrigatória para salário, promoção e enquadramento. **Faixa salarial é só aviso.**
-- **Aprovação:** Gestor → RH Local → RH Central. Devolução (comentário ≥ 5) volta para o gestor;
-  reprovação encerra. A aprovação final marca `aprovada/concluida` e **não altera o cadastro canônico**.
+- **10 tipos de movimentação:** mudança de gestor, alteração de cargo, alteração salarial, promoção,
+  enquadramento, transferência de centro de custo, mérito, transferência de localidade (cruza plantas;
+  CC + gestor de destino), alteração de mão de obra (direta/indireta) e alteração de área de atuação.
+- **Regras de envio** (recalculadas no servidor): justificativa ≥ 10 caracteres; vigência válida e fora
+  do mês de fechamento da folha; gestor proposto ativo, gestor, diferente do atual e do próprio
+  colaborador; cargo permitido na planta; salário positivo e diferente do atual; enquadramento muda
+  folha ou horário; centro de custo compatível com a planta (atual ou proposta, conforme o tipo);
+  evidência obrigatória para salário, promoção, enquadramento e mérito. **Faixa salarial é só aviso.**
+- **Aprovação:** Gestor → RH Local → RH Central; quem cria o workflow para seu próprio liderado não
+  aprova a própria solicitação (a etapa inicial já sai em RH Local). Devolução (comentário ≥ 5) volta
+  para o gestor; reprovação encerra. A aprovação final marca `aprovada/concluida` e **não altera o
+  cadastro canônico**. Transferência de localidade com gestor de destino informado exige aprovação de
+  **ambos** (origem e destino) antes de avançar — mecanismo genérico e configurável
+  (`EXIGE_APROVACAO_GESTOR_DESTINO`), hoje só aplicado a esse tipo.
+- **Fechamento mensal da folha (Share):** trava única por mês (`folha_fechamento`, histórico
+  append-only). Enquanto travado, o envio de qualquer movimentação com vigência nesse mês é bloqueado
+  no servidor (`422 FOLHA_FECHADA`) com a data válida do mês seguinte sugerida. Três liberações
+  distintas e cumulativas para gerar arquivos de saída: (1) fluxo aprovado, (2) RH Central libera a
+  movimentação para a Folha, (3) mês de vigência não travado pelo Share.
+- **Chamados com múltiplas alterações:** uma movimentação pode ser aberta como nova alteração de um
+  chamado existente (`chamadoPaiId`, normalizado para a raiz, mesmo colaborador obrigatório); cada
+  alteração mantém seu próprio ciclo de aprovação/documentos/checagens, sem alterar a máquina de
+  estados. Qualquer alteração cancelável (rascunho/em andamento/devolvida/reprovada) pode ser
+  cancelada isoladamente, sem afetar as demais do mesmo chamado.
 - **Concorrência:** decisões usam lock de linha e revalidam estado/perfil sob lock; duas decisões
   concorrentes na mesma etapa resultam em uma transição e um `409`.
 - **Evidências:** validação de MIME, extensão, tamanho, conteúdo vazio e assinatura real do arquivo;
@@ -229,10 +251,15 @@ sem stack ou SQL. O `X-Correlation-Id` é propagado nos logs estruturados do Fas
 Tabelas: `plantas`, `areas`, `cargos`, `cargo_plantas`, `centros_custo`, `horarios`, `folhas`,
 `usuarios`, `colaboradores`, `colaborador_fontes`, `movimentacoes`, `movimentacao_decisoes`,
 `movimentacao_eventos`, `movimentacao_documentos`, `divergencias`, `conciliacoes`, `exports`,
-`logs_integracao`. Datas civis em `date`, instantes em `timestamptz`, salários `numeric(14,2)`, enums
-com `text + CHECK`, `jsonb` só em `alteracao`/`checagens`. Índices compostos conforme os filtros
-das telas; `test/indices.test.ts` confirma via `EXPLAIN` que cada um é utilizável. Não foi criado o
-índice parcial de `em_andamento` (o composto por planta/status/etapa já cobre o filtro no volume atual).
+`logs_integracao`, `folha_fechamento` (singleton, id=1), `folha_fechamento_eventos`. Datas civis em
+`date`, instantes em `timestamptz`, salários `numeric(14,2)`, enums com `text + CHECK`, `jsonb` só em
+`alteracao`/`checagens`. `movimentacoes.chamado_pai_id` é auto-referência (nula = a própria linha é a
+raiz do chamado); `movimentacoes.potencial` e `colaboradores.tipo_mao_de_obra` são opcionais. IPE
+não é persistido por movimentação — é sempre derivado de `cargo_plantas.ipe` no momento da leitura.
+Índices compostos conforme os filtros das telas, incluindo `(coalesce(chamado_pai_id, id))` para
+agrupar um chamado; `test/indices.test.ts` confirma via `EXPLAIN` que cada um é utilizável. Não foi
+criado o índice parcial de `em_andamento` (o composto por planta/status/etapa já cobre o filtro no
+volume atual).
 
 ## O que é demonstrativo
 
@@ -250,17 +277,27 @@ das telas; `test/indices.test.ts` confirma via `EXPLAIN` que cada um é utilizá
 - Sem matriz de alçadas, o escopo é por **planta**: Gestor aprova só liderados diretos; RH Central atua
   em todas as plantas quando o usuário não tem planta definida (a estrutura já aceita restringir).
 - Gestor/RH podem abrir movimentações para colaboradores da sua planta (regra de demonstração).
-- Transferência de centro de custo só dentro da planta atual (como no frontend); proposta igual ao
-  valor atual é tratada como "não informada".
+- Transferência de centro de custo só dentro da planta atual (como no frontend); transferência de
+  localidade cruza plantas; proposta igual ao valor atual é tratada como "não informada".
 - Responsável de divergência: colaborador ativo da área Recursos Humanos.
 - Logs: RH Central e Auditoria veem todos; os demais veem apenas os próprios.
+- **Aprovação dupla do gestor de destino** (transferência de localidade): implementada apenas para
+  esse tipo, porque é o único caso descrito na planilha ("necessidade de aprovação do gestor para
+  aprovar workflow qdo transfere funcionário"). A extensão a outros tipos (mudança de gestor,
+  transferência de CC) e a ordem exata das duas aprovações não estão descritas — o mecanismo é
+  genérico e configurável, mas a decisão de ampliá-lo é de negócio.
+- **Bônus/PRP:** a planilha nunca preenche esses campos em nenhum exemplo e não define taxonomia —
+  não foram implementados para não inventar dado ausente.
 
 ## Bloqueios para produção
 
 Não implementados por falta de definição: **layout oficial da transação 19092**; **layout/canal de
 entrega e retorno do arquivo do Employee Central**; **credenciais e formato de leitura de Apdata/Employee
 Central**; **autoridade por campo e processo de resolução de divergências**; **matriz de
-aprovação/alçadas/substituições por planta**; **retenção legal, classificação LGPD, RPO/RTO e SLA**.
+aprovação/alçadas/substituições por planta**; **extensão da aprovação dupla do gestor de destino a
+outros tipos de movimentação além de transferência de localidade**; **taxonomia de bônus/PRP**;
+**modelo oficial das cartas de promoção/mérito** (hoje só upload/consulta como anexo, sem geração
+automática); **retenção legal, classificação LGPD, RPO/RTO e SLA**.
 Ainda é necessário configurar o tenant Entra, provisionar os usuários e aplicar TLS, HSTS/CSP e rate
 limiting na borda de produção. Também fora de escopo: recrutamento,
 onboarding e demais módulos, IA/agentes, API personalizada do Apdata, relógios de ponto, Slack/Teams,
